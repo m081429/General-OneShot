@@ -170,7 +170,7 @@ cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optim
 # Run the training
 ###############################################################################
 model.fit(ds_t,
-          steps_per_epoch=train_ds.image_file_list.__len__(),
+          steps_per_epoch=train_ds.image_file_list.__len__() / args.BATCH_SIZE,
           epochs=args.num_epochs,
           callbacks=cb,
           validation_data=ds_v,
