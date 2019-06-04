@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from preprocess import Preprocess
 from data_runner import DataRunner
-from model_factory import compile_model
+from model_factory import GetModel
 from callbacks import CallBacks
 
 tf.config.gpu.set_per_process_memory_growth(True)
@@ -90,17 +90,10 @@ parser.add_argument("-w", "--num-workers",
                     help="Number of workers to use for training",
                     default=10, type=int)
 
-parser.add_argument("-s", "--steps-per-epoch",
-                    dest='spe',
-                    help="Limit number of examples for faster iterating",
-                    default=None, type=int)
-
-parser.add_argument("-m", "--use-multiprocessing",
-                    dest='use_multiprocessing',
+parser.add_argument("--use-multiprocessing",
                     help="Whether or not to use multiprocessing",
-                    default=True, type=bool)
-
-
+                    const=True, default=False, nargs='?',
+                    type=bool)
 
 parser.add_argument("-V", "--verbose",
                     dest="logLevel",
@@ -123,30 +116,47 @@ logging.basicConfig(stream=sys.stderr, level=args.logLevel,
 # Get Training and Validation data
 train_data = Preprocess(args.image_dir_train)
 
-train_ds = DataRunner(train_data.set_list
+train_ds = DataRunner(train_data.set_list,
                       train=True,
                       image_size=args.patch_size)
 
-ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets(), output_types=(
+
+def tgen():
+    for i in train_ds.image_file_list:
+        a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
+        p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
+        n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)
+        yield [a_img, p_img, n_img], [1, 1, 0]
+
+
+
+ds_t = tf.data.Dataset.from_generator(tgen, output_types=(
     {
         "anchor": tf.float32,
         "pos_img": tf.float32,
         "neg_img": tf.float32
-    }, tf.int64)).batch(args.BATCH_SIZE).repeat()
+    }, tf.int64))#.batch(args.BATCH_SIZE).repeat()
 
 
 if args.image_dir_validation:
-    val_data = Preprocess(image_dir_validation)
+    val_data = Preprocess(args.image_dir_validation)
     val_ds = DataRunner(val_data.set_list,
                         train=False,
                         image_size=args.patch_size)
-    ds_v = tf.data.Dataset.from_generator(val_ds.get_distributed_datasets(), output_types=(
+    def vgen():
+        for i in val_ds.image_file_list:
+            a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
+            p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
+            n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)
+            yield [a_img, p_img, n_img], [1, 1, 0]
+
+    ds_v = tf.data.Dataset.from_generator(vgen, output_types=(
         {
             "anchor": tf.float32,
             "pos_img": tf.float32,
             "neg_img": tf.float32
         }, tf.int64)).batch(args.BATCH_SIZE).repeat()
-    validation_steps = 1000
+    validation_steps = val_ds.image_file_list.__len__() / args.BATCH_SIZE
 else:
     ds_v = None
     validation_steps = None
@@ -159,7 +169,8 @@ else:
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
 with mirrored_strategy.scope():
-    model = compile_model(args.optimizer, args.lr, img_size=args.patch_size)
+    m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+    model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
 
 ###############################################################################
 # Define callbacks

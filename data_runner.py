@@ -35,8 +35,8 @@ class DataRunner:
 
         return image
 
-    def get_distributed_datasets(self):
-        for i in self.image_file_list
+    def get_distributed_datasets(self, image_file_list):
+        for i in self.image_file_list:
             a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
             p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
             n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)

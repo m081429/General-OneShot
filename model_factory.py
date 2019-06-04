@@ -1,8 +1,8 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D
+from tensorflow.keras import Model
 
-from loss import lossless_triplet_loss as triplet_loss
+from losses import lossless_triplet_loss as triplet_loss
 
 class GetModel:
 
@@ -23,82 +23,86 @@ class GetModel:
 
         input_tensor = Input(shape=(self.img_size, self.img_size, 3))
         weights = self.weights
+        IMG_SHAPE = (self.img_size, self.img_size, 3)
 
         if self.model_name == 'DenseNet121':
             model = tf.keras.applications.DenseNet121(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.densenet.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.densenet.preprocess_input(input_tensor)
 
         elif self.model_name == 'DenseNet169':
             model = tf.keras.applications.DenseNet169(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.densenet.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.densenet.preprocess_input(input_tensor)
 
         elif self.model_name == 'DenseNet201':
             model = tf.keras.applications.DenseNet201(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.densenet.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.densenet.preprocess_input(input_tensor)
 
         elif self.model_name == 'InceptionResNetV2':
             model = tf.keras.applications.InceptionResNetV2(weights=weights, include_top=include_top,
-                                                            input_tensor=input_tensor)
-            preprocess = tf.keras.applications.inception_resnet_v2.preprocess_input()
+                                                            input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.inception_resnet_v2.preprocess_input(input_tensor)
 
         elif self.model_name == 'InceptionV3':
             model = tf.keras.applications.InceptionV3(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.inception_v3.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.inception_v3.preprocess_input(input_tensor)
 
         elif self.model_name == 'MobileNet':
             model = tf.keras.applications.MobileNet(weights=weights, include_top=include_top,
-                                                    input_tensor=input_tensor)
-            preprocess = tf.keras.applications.mobilenet.preprocess_input()
+                                                    input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.mobilenet.preprocess_input(input_tensor)
 
         elif self.model_name == 'MobileNetV2':
             model = tf.keras.applications.MobileNetV2(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.mobilenet_v2.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.mobilenet_v2.preprocess_input(input_tensor)
 
         elif self.model_name == 'NASNetLarge':
             model = tf.keras.applications.NASNetLarge(weights=weights, include_top=include_top,
-                                                      input_tensor=input_tensor)
-            preprocess = tf.keras.applications.nasnet.preprocess_input()
+                                                      input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.nasnet.preprocess_input(input_tensor)
 
         elif self.model_name == 'NASNetMobile':
             model = tf.keras.applications.NASNetMobile(weights=weights, include_top=include_top,
-                                                       input_tensor=input_tensor)
-            preprocess = tf.keras.applications.nasnet.preprocess_input()
+                                                       input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.nasnet.preprocess_input(input_tensor)
 
         elif self.model_name == 'ResNet50':
             model = tf.keras.applications.ResNet50(weights=weights, include_top=include_top,
-                                                   input_tensor=input_tensor)
-            preprocess = tf.keras.applications.resnet50.preprocess_input()
+                                                   input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.resnet50.preprocess_input(input_tensor)
 
         elif self.model_name == 'VGG16':
+            print('Model loaded was VGG16')
             model = tf.keras.applications.VGG16(weights=weights, include_top=include_top,
-                                                input_tensor=input_tensor)
-            preprocess = tf.keras.applications.vgg16.preprocess_input()
+                                                input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.vgg16.preprocess_input(input_tensor)
 
         elif self.model_name == 'VGG19':
             model = tf.keras.applications.VGG19(weights=weights, include_top=include_top,
-                                                input_tensor=input_tensor)
-            preprocess = tf.keras.applications.vgg19.preprocess_input()
+                                                input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.vgg19.preprocess_input(input_tensor)
 
         else:
             raise AttributeError("{} not found in available models".format(self.model_name))
 
         # Add a global average pooling and change the output size to our number of classes
-        model = GlobalAveragePooling2D()(model)
-        model = Dense(self.classes, activation='sigmoid')(model)
+        base_model = model
+        x = base_model.output
+        out = Dense(self.classes, activation='sigmoid')(x)
+        conv_model = Model(inputs=base_model.input, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
         if self.num_layers is not None:
-            for layer in model.layers[:self.num_layers]:
+            for layer in base_model.layers[:self.num_layers]:
                 layer.trainable = False
-            for layer in model.layers[self.num_layers:]:
+            for layer in base_model.layers[self.num_layers:]:
                 layer.trainable = True
 
-        return model, preprocess
+        return conv_model, preprocess
 
 
     def _get_optimizer(self, name, lr=0.001):
@@ -113,7 +117,7 @@ class GetModel:
         elif name == 'Ftrl':
             optimizer = tf.keras.optimizers.Ftrl(learning_rate=lr)
         elif name == 'Nadam':
-            optimizer = tf.keras.optimizers.Nadam'(learning_rate=lr)
+            optimizer = tf.keras.optimizers.Nadam(learning_rate=lr)
         elif name == 'RMSprop':
             optimizer = tf.keras.optimizers.RMSprop(learning_rate=lr)
         elif name == 'SGD':
@@ -135,9 +139,9 @@ class GetModel:
         neg_in = Input(shape=in_dims, name='neg_img')
 
         # Share base network with the 3 inputs
-        anchor_out = conv_model(anchor_in)
-        pos_out = conv_model(pos_in)
-        neg_out = conv_model(neg_in)
+        anchor_out = conv_model()
+        pos_out = conv_model()
+        neg_out = conv_model()
 
         y_pred = tf.keras.layers.concatenate([anchor_out, pos_out, neg_out])
 
