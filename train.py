@@ -197,3 +197,5 @@ model.fit(ds_t,
           shuffle=False,
           initial_epoch=0
           )
+
+tf.keras.experimental.export_saved_model(model, out_dir)
