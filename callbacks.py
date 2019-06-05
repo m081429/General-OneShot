@@ -1,4 +1,5 @@
 import tensorflow as tf
+import os
 
 class CallBacks:
     
@@ -8,7 +9,7 @@ class CallBacks:
         self.learning_rate = learning_rate
         self.optimizer = optimizer
         self.summary = log_dir + '_' + optimizer + '_' + str(learning_rate)
-        self.callbacks = get_callbacks()
+        self.callbacks = self.get_callbacks()
         
 
     def _getTB(self):
@@ -26,5 +27,5 @@ class CallBacks:
         return tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3)
     
     def get_callbacks(self):
-        return _getTB(), _getCP(), _getES()
+        return self._getTB(), self._getCP(), self._getES()
 

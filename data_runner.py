@@ -24,7 +24,6 @@ class DataRunner:
         image = tf.cast(image, tf.float32)
         image = tf.image.per_image_standardization(image)
         image = tf.image.resize(image, (img_size, img_size))
-        image = tf.reshape(image, (img_size, img_size, 3))
 
         if train is True:
             image = tf.image.random_flip_left_right(image)
@@ -33,13 +32,16 @@ class DataRunner:
             image = tf.image.random_flip_up_down(image)
             image = tf.image.random_hue(image, max_delta=0.2)
 
+        image = tf.reshape(image, (img_size, img_size, 3))
+
         return image
 
-    def get_distributed_datasets(self, image_file_list):
+    def get_distributed_datasets(self):
         for i in self.image_file_list:
-            a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
-            p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
-            n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)
-            yield [a_img, p_img, n_img], [1, 1, 0]
+            a_img = self.format_example(i[0], img_size=self.image_size, train=self.train)
+            p_img = self.format_example(i[1], img_size=self.image_size, train=self.train)
+            n_img = self.format_example(i[2], img_size=self.image_size, train=self.train)
+
+            yield {"anchor": a_img, "pos_img": p_img,"neg_img": n_img}, [1, 1, 0]
 
 

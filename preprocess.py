@@ -80,7 +80,7 @@ class Preprocess:
                 p_img = choice(self.class_files[p_idx])
                 n_img = choice(self.class_files[n_idx])
                 l = (a_img, p_img, n_img)
-                l = [l, [1, 1, 0]]    # labels
+                #l = [l, [1, 1, 0]]    # labels
                 set_list.append(l)
             except IndexError:
                 pass  # this is for when you run out of samples

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D
+from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
 from tensorflow.keras import Model
 
 from losses import lossless_triplet_loss as triplet_loss
@@ -92,8 +92,9 @@ class GetModel:
         # Add a global average pooling and change the output size to our number of classes
         base_model = model
         x = base_model.output
-        out = Dense(self.classes, activation='sigmoid')(x)
-        conv_model = Model(inputs=base_model.input, outputs=out)
+        x = Flatten()(x)
+        out = Dense(1, activation='sigmoid')(x)
+        conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
         if self.num_layers is not None:
@@ -139,9 +140,9 @@ class GetModel:
         neg_in = Input(shape=in_dims, name='neg_img')
 
         # Share base network with the 3 inputs
-        anchor_out = conv_model()
-        pos_out = conv_model()
-        neg_out = conv_model()
+        anchor_out = conv_model(anchor_in)
+        pos_out = conv_model(pos_in)
+        neg_out = conv_model(neg_in)
 
         y_pred = tf.keras.layers.concatenate([anchor_out, pos_out, neg_out])
 
@@ -149,7 +150,7 @@ class GetModel:
         model = Model(inputs=[{'anchor': anchor_in,
                                'pos_img': pos_in,
                                'neg_img': neg_in}], outputs=y_pred)
-
-        model.compile(optimizer=_get_optimizer(optimizer, lr=lr), loss=triplet_loss)
+        tf.keras.utils.plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
+        model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss)
 
         return model

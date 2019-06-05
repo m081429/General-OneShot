@@ -120,37 +120,21 @@ train_ds = DataRunner(train_data.set_list,
                       train=True,
                       image_size=args.patch_size)
 
-
-def tgen():
-    for i in train_ds.image_file_list:
-        a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
-        p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
-        n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)
-        yield [a_img, p_img, n_img], [1, 1, 0]
-
-
-
-ds_t = tf.data.Dataset.from_generator(tgen, output_types=(
+ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_types=(
     {
         "anchor": tf.float32,
         "pos_img": tf.float32,
         "neg_img": tf.float32
-    }, tf.int64))#.batch(args.BATCH_SIZE).repeat()
-
+    }, tf.int64),
+    output_shapes=None).batch(args.BATCH_SIZE).repeat()
 
 if args.image_dir_validation:
     val_data = Preprocess(args.image_dir_validation)
     val_ds = DataRunner(val_data.set_list,
                         train=False,
                         image_size=args.patch_size)
-    def vgen():
-        for i in val_ds.image_file_list:
-            a_img = format_example(self.i[0], img_size=self.image_size, train=self.train)
-            p_img = format_example(self.i[1], img_size=self.image_size, train=self.train)
-            n_img = format_example(self.i[2], img_size=self.image_size, train=self.train)
-            yield [a_img, p_img, n_img], [1, 1, 0]
 
-    ds_v = tf.data.Dataset.from_generator(vgen, output_types=(
+    ds_v = tf.data.Dataset.from_generator(val_ds.get_distributed_datasets, output_types=(
         {
             "anchor": tf.float32,
             "pos_img": tf.float32,
@@ -175,7 +159,7 @@ with mirrored_strategy.scope():
 ###############################################################################
 # Define callbacks
 ###############################################################################
-cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optimizer)
+#cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optimizer)
 
 ###############################################################################
 # Run the training
@@ -183,9 +167,9 @@ cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optim
 model.fit(ds_t,
           steps_per_epoch=train_ds.image_file_list.__len__() / args.BATCH_SIZE,
           epochs=args.num_epochs,
-          callbacks=cb,
+          callbacks=None,
           validation_data=ds_v,
-          validation_steps=100,
+          validation_steps=validation_steps,
           class_weight=None,
           max_queue_size=1000,
           workers=args.NUM_WORKERS,
