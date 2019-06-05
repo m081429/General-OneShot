@@ -1,7 +1,7 @@
 from random import shuffle, choice
-import tensorflow as tf
 import os
-
+import logging
+logger = logging.getLogger(__name__)
 
 class Preprocess:
 
@@ -13,6 +13,7 @@ class Preprocess:
 
         :returns class_files: a dict of each file in each folder
         """
+        logger.debug('Initializing Preprocess')
         super().__init__()
         self.directory_path = directory_path
         self.class_files = self.__get_list()
@@ -20,6 +21,7 @@ class Preprocess:
         self.set_list = self.__group_into_triples()
 
     def __get_list(self):
+        logging.debug('Getting initial list of images')
         class_files = dict()
         classes = os.listdir(self.directory_path)
 
@@ -35,6 +37,7 @@ class Preprocess:
         return class_files
 
     def __count_min_number_of_images(self):
+        logger.debug('Counting the number of images')
         min_images = None
         for k, v in self.class_files.items():
             if min_images is None or min_images < len(v):
@@ -48,7 +51,6 @@ class Preprocess:
         """
         Construct a list of three indexes for anchor, pos, neg
         """
-
         n_groups = self.__count_number_of_groups()
 
         # Choose an anchor/positive index
@@ -69,6 +71,7 @@ class Preprocess:
     def __group_into_triples(self):
         """ Convert sorted individual lists into triples
         """
+        logger.debug('Grouping into triples')
         set_list = []
         for i in range(self.min_images):
             try:
@@ -80,7 +83,6 @@ class Preprocess:
                 p_img = choice(self.class_files[p_idx])
                 n_img = choice(self.class_files[n_idx])
                 l = (a_img, p_img, n_img)
-                #l = [l, [1, 1, 0]]    # labels
                 set_list.append(l)
             except IndexError:
                 pass  # this is for when you run out of samples

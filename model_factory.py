@@ -150,7 +150,6 @@ class GetModel:
         model = Model(inputs=[{'anchor': anchor_in,
                                'pos_img': pos_in,
                                'neg_img': neg_in}], outputs=y_pred)
-        tf.keras.utils.plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
         model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss)
 
         return model

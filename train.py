@@ -75,7 +75,7 @@ parser.add_argument("-r", "--learning-rate",
                     help="Learning rate",
                     default=0.0001, type=float)
 
-parser.add_argument("-e", "--num_epocs",
+parser.add_argument("-e", "--num-epochs",
                     dest='num_epochs',
                     help="Number of epochs to use for training",
                     default=10, type=int)
@@ -88,11 +88,11 @@ parser.add_argument("-b", "--batch-size",
 parser.add_argument("-w", "--num-workers",
                     dest='NUM_WORKERS',
                     help="Number of workers to use for training",
-                    default=10, type=int)
+                    default=5, type=int)
 
 parser.add_argument("--use-multiprocessing",
                     help="Whether or not to use multiprocessing",
-                    const=True, default=False, nargs='?',
+                    const=True, default=True, nargs='?',
                     type=bool)
 
 parser.add_argument("-V", "--verbose",
@@ -107,7 +107,8 @@ logging.basicConfig(stream=sys.stderr, level=args.logLevel,
                         format='%(name)s (%(levelname)s): %(message)s')
 
 
-
+logger = logging.getLogger(__name__)
+logger.setLevel(args.logLevel)
 
 ###############################################################################
 # Begin priming the data generation pipeline
@@ -115,10 +116,12 @@ logging.basicConfig(stream=sys.stderr, level=args.logLevel,
 
 # Get Training and Validation data
 train_data = Preprocess(args.image_dir_train)
+logger.debug('Completed Preprocess')
 
 train_ds = DataRunner(train_data.set_list,
                       train=True,
                       image_size=args.patch_size)
+logger.debug('Completed Data runner')
 
 ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_types=(
     {
@@ -127,9 +130,11 @@ ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_
         "neg_img": tf.float32
     }, tf.int64),
     output_shapes=None).batch(args.BATCH_SIZE).repeat()
+logger.debug('Completed generator')
 
 if args.image_dir_validation:
     val_data = Preprocess(args.image_dir_validation)
+
     val_ds = DataRunner(val_data.set_list,
                         train=False,
                         image_size=args.patch_size)
@@ -139,8 +144,10 @@ if args.image_dir_validation:
             "anchor": tf.float32,
             "pos_img": tf.float32,
             "neg_img": tf.float32
-        }, tf.int64)).batch(args.BATCH_SIZE).repeat()
+        }, tf.int64),
+        output_shapes=None).batch(args.BATCH_SIZE).repeat()
     validation_steps = val_ds.image_file_list.__len__() / args.BATCH_SIZE
+
 else:
     ds_v = None
     validation_steps = None
@@ -151,15 +158,28 @@ else:
 # Build the model
 ###############################################################################
 mirrored_strategy = tf.distribute.MirroredStrategy()
+logger.debug('Mirror initialized')
 
-with mirrored_strategy.scope():
-    m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
-    model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
+#with mirrored_strategy.scope():
+#    m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+#    logger.debug('Model constructed')
+#    model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
+#    logger.debug('Model compiled')
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+logger.debug('Model constructed')
+model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
+logger.debug('Model compiled')
 
 ###############################################################################
 # Define callbacks
 ###############################################################################
-#cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optimizer)
+cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optimizer)
+out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True, show_layer_names=True)
+logger.debug('Model image saved')
 
 ###############################################################################
 # Run the training
@@ -167,7 +187,7 @@ with mirrored_strategy.scope():
 model.fit(ds_t,
           steps_per_epoch=train_ds.image_file_list.__len__() / args.BATCH_SIZE,
           epochs=args.num_epochs,
-          callbacks=None,
+          callbacks=cb.get_callbacks(),
           validation_data=ds_v,
           validation_steps=validation_steps,
           class_weight=None,

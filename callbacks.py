@@ -27,5 +27,5 @@ class CallBacks:
         return tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3)
     
     def get_callbacks(self):
-        return self._getTB(), self._getCP(), self._getES()
+        return [self._getTB(), self._getCP(), self._getES()]
 
