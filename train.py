@@ -160,21 +160,31 @@ else:
 mirrored_strategy = tf.distribute.MirroredStrategy()
 logger.debug('Mirror initialized')
 
+# This must be fixed for multi-GPU
 #with mirrored_strategy.scope():
 #    m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
 #    logger.debug('Model constructed')
 #    model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
 #    logger.debug('Model compiled')
+
+
 m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
 logger.debug('Model constructed')
 model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
 logger.debug('Model compiled')
 
+out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+
+# restore weights if they already exist
+if os.path.exists(os.path.join(out_dir,'my_model.h5')):
+    logger.debug('Loading initialized model')
+    model = tf.keras.load_model(os.path.join(out_dir,'my_model.h5'))
+    logger.debug('Completed loading initialized model')
+
 ###############################################################################
 # Define callbacks
 ###############################################################################
-cb = CallBacks(learning_rate=args.lr, log_dir=args.log_dir, optimizer=args.optimizer)
-out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
@@ -197,5 +207,4 @@ model.fit(ds_t,
           shuffle=False,
           initial_epoch=0
           )
-
-tf.keras.experimental.export_saved_model(model, out_dir)
+model.save(os.path.join(out_dir,'my_model.h5'))
