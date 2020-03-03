@@ -10,7 +10,7 @@ from data_runner import DataRunner
 from model_factory import GetModel
 from callbacks import CallBacks
 
-tf.config.gpu.set_per_process_memory_growth(True)
+#tf.config.gpu.set_per_process_memory_growth(True)
 
 ###############################################################################
 # Input Arguments
@@ -101,6 +101,8 @@ parser.add_argument("-V", "--verbose",
                     default="INFO",
                     help="Set the logging level")
 
+
+
 args = parser.parse_args()
 
 logging.basicConfig(stream=sys.stderr, level=args.logLevel,
@@ -122,14 +124,18 @@ train_ds = DataRunner(train_data.set_list,
                       train=True,
                       image_size=args.patch_size)
 logger.debug('Completed Data runner')
-
+#Naresh Modified:Added output_shapes required by TF-gpu 2.0.0
 ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_types=(
     {
         "anchor": tf.float32,
         "pos_img": tf.float32,
         "neg_img": tf.float32
     }, tf.int64),
-    output_shapes=None).batch(args.BATCH_SIZE).repeat()
+    output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3])).batch(args.BATCH_SIZE).repeat()
+
+
+
+
 logger.debug('Completed generator')
 
 if args.image_dir_validation:
@@ -138,26 +144,31 @@ if args.image_dir_validation:
     val_ds = DataRunner(val_data.set_list,
                         train=False,
                         image_size=args.patch_size)
-
+    ##Naresh Modified:Added output_shapes required by TF-gpu 2.0.0
     ds_v = tf.data.Dataset.from_generator(val_ds.get_distributed_datasets, output_types=(
         {
             "anchor": tf.float32,
             "pos_img": tf.float32,
             "neg_img": tf.float32
         }, tf.int64),
-        output_shapes=None).batch(args.BATCH_SIZE).repeat()
+        output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3])).batch(args.BATCH_SIZE).repeat()
     validation_steps = val_ds.image_file_list.__len__() / args.BATCH_SIZE
 
 else:
     ds_v = None
     validation_steps = None
 
+#for image, label in ds_v.take(1):
+    #print("Image shape: ", image.numpy().shape)
+    #print("Image shape: ", image["anchor"].numpy().shape)
+    #print("Label: ", label.numpy().shape)
+#sys.exit(0)
 # I now have generators for training and validation
 
 ###############################################################################
 # Build the model
 ###############################################################################
-mirrored_strategy = tf.distribute.MirroredStrategy()
+#mirrored_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 logger.debug('Mirror initialized')
 
 # This must be fixed for multi-GPU
@@ -190,12 +201,13 @@ if not os.path.exists(out_dir):
 
 tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True, show_layer_names=True)
 logger.debug('Model image saved')
+steps_perepoch=train_ds.image_file_list.__len__() / args.BATCH_SIZE
 
 ###############################################################################
 # Run the training
 ###############################################################################
 model.fit(ds_t,
-          steps_per_epoch=train_ds.image_file_list.__len__() / args.BATCH_SIZE,
+          steps_per_epoch=steps_perepoch,
           epochs=args.num_epochs,
           callbacks=cb.get_callbacks(),
           validation_data=ds_v,

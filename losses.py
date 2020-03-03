@@ -22,7 +22,7 @@ def triplet_loss(y_true, y_pred):
 
     # distance between the anchor and the negative
     neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)))
-
+    #print('\tNon-Linear distances for pos_dist and neg_dist are {} and {}\n'.format(pos_dist, neg_dist))
     # compute loss
     basic_loss = pos_dist - neg_dist + alpha
 

@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
 from tensorflow.keras import Model
 
-from losses import lossless_triplet_loss as triplet_loss
+from losses import triplet_loss
 
 class GetModel:
 
@@ -150,6 +150,13 @@ class GetModel:
         model = Model(inputs=[{'anchor': anchor_in,
                                'pos_img': pos_in,
                                'neg_img': neg_in}], outputs=y_pred)
-        model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss)
+        model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss, metrics=[
+                          #tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
+                          tf.keras.metrics.AUC( name='AUC'),
+                          tf.keras.metrics.AUC( curve='PR',name='PR'),
+                          tf.keras.metrics.Accuracy(name='accuracy'),
+                          tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
+                          tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')
+                      ])
 
         return model

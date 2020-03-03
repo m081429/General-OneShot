@@ -1,6 +1,7 @@
 from random import shuffle, choice
 import os
 import logging
+import sys
 logger = logging.getLogger(__name__)
 
 class Preprocess:
@@ -33,7 +34,6 @@ class Preprocess:
             i = class_files[x]
             shuffle(i)
             class_files[x] = i
-
         return class_files
 
     def __count_min_number_of_images(self):
@@ -52,7 +52,6 @@ class Preprocess:
         Construct a list of three indexes for anchor, pos, neg
         """
         n_groups = self.__count_number_of_groups()
-
         # Choose an anchor/positive index
         a_idx = choice(range(n_groups))
         p_idx = a_idx
@@ -61,7 +60,6 @@ class Preprocess:
         n_idx = p_idx
         while n_idx == p_idx:
             n_idx = choice(range(n_groups))
-
         return a_idx, p_idx, n_idx
 
     def __get_dictname_from_indexes(self, a_idx, p_idx, n_idx):
@@ -78,10 +76,16 @@ class Preprocess:
                 a_idx, p_idx, n_idx = self.__get_indexes()
                 a_idx, p_idx, n_idx = self.__get_dictname_from_indexes(a_idx, p_idx, n_idx)
 
-                # Only pop from the anchor, otherwise random sample from others
-                a_img = self.class_files[a_idx].pop()
-                p_img = choice(self.class_files[p_idx])
-                n_img = choice(self.class_files[n_idx])
+                # Only pop from the anchor, otherwise random sample from others 
+                #modified by Naresh: min number of images index can be random , so need to add the other possibility if
+                if len(self.class_files[a_idx]) == self.min_images:
+                    a_img = self.class_files[a_idx][i]
+                    p_img = choice(self.class_files[p_idx])
+                    n_img = choice(self.class_files[n_idx])
+                else:
+                    n_img = self.class_files[n_idx][i]
+                    p_img = choice(self.class_files[p_idx])
+                    a_img = choice(self.class_files[a_idx])
                 l = (a_img, p_img, n_img)
                 set_list.append(l)
             except IndexError:
