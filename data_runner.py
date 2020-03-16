@@ -20,7 +20,8 @@ class DataRunner:
         :return: image
         """
         image = tf.io.read_file(image_name)
-        image = tf.io.decode_jpeg(image)
+        #image = tf.io.decode_jpeg(image)
+        image = tf.io.decode_png(image)
         image = tf.cast(image, tf.float32)
         image = tf.image.per_image_standardization(image)
         image = tf.image.resize(image, (img_size, img_size))

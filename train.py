@@ -131,7 +131,20 @@ ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_
         "pos_img": tf.float32,
         "neg_img": tf.float32
     }, tf.int64),
-    output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3])).batch(args.BATCH_SIZE).repeat()
+    output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3]))
+
+#num_img=0    
+#for image, label in ds_t:
+    #print("Image shape: ", image["pos_img"].numpy().shape)
+    #print("Image shape: ", image["anchor"].numpy().shape)
+    #print("Image shape: ", image["neg_img"].numpy().shape)
+    #print("Label: ", label.numpy().shape)
+    #print("Label: ", label.numpy())
+    #num_img=num_img+1
+#print(num_img)    
+#sys.exit(0)
+
+ds_t=ds_t.batch(args.BATCH_SIZE).repeat()
 
 
 
@@ -157,11 +170,13 @@ if args.image_dir_validation:
 else:
     ds_v = None
     validation_steps = None
-
-#for image, label in ds_v.take(1):
+#num_img=0
+#for image, label in ds_t.take(1):
     #print("Image shape: ", image.numpy().shape)
     #print("Image shape: ", image["anchor"].numpy().shape)
     #print("Label: ", label.numpy().shape)
+    #num_img=num_img+1
+#print(num_img)
 #sys.exit(0)
 # I now have generators for training and validation
 

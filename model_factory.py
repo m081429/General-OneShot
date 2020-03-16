@@ -3,7 +3,7 @@ from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatte
 from tensorflow.keras import Model
 
 from losses import triplet_loss
-
+#from losses import lossless_triplet_loss as triplet_loss 
 class GetModel:
 
     def __init__(self, model_name=None, img_size=256, classes=1, weights='imagenet', retrain=True, num_layers=None):
