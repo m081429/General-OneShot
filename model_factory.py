@@ -3,7 +3,6 @@ from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatte
 from tensorflow.keras import Model
 
 
-@tf.function
 class GetModel:
 
     def __init__(self, model_name=None, img_size=256, classes=1, weights='imagenet', retrain=True, num_layers=None):
@@ -127,14 +126,15 @@ class GetModel:
 
         return optimizer
 
+
     def build_model(self, optimizer, lr, img_size=256):
         conv_model = self.model
 
         # Now I need to form my one-shot model structure
-        in_dims = [None, img_size, img_size, 3]
+        in_dims = [img_size, img_size, 3]
 
         # Create the 3 inputs
-        anchor_in = Input(shape=in_dims, name='anchor')
+        anchor_in = Input(shape=in_dims, name='anchor_img')
         pos_in = Input(shape=in_dims, name='pos_img')
         neg_in = Input(shape=in_dims, name='neg_img')
 
@@ -144,9 +144,7 @@ class GetModel:
         neg_out = conv_model(neg_in)
 
         # Define the trainable model
-        model = Model(inputs=[{'anchor': anchor_in,
-                               'pos_img': pos_in,
-                               'neg_img': neg_in}],
+        model = Model(inputs=[anchor_in, pos_in, neg_in],
                       outputs=[{'anchor_out': anchor_out,
                                 'pos_out': pos_out,
                                 'neg_out': neg_out}])

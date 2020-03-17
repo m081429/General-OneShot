@@ -254,8 +254,11 @@ cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
-tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True, show_layer_names=True)
-logger.debug('Model image saved')
+try:
+    tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True, show_layer_names=True)
+    logger.debug('Model image saved')
+except ImportError:
+    print('No pydot available.  Skipping printing')
 
 ###############################################################################
 # Run the training
@@ -266,15 +269,16 @@ for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
 
     # Iterate over the batches of the dataset.  # TODO: Not sure I can iterate over a dictionary
-    for step, anchor_img, pos_img, neg_img in enumerate(train_ds):
-
+    for step, data in enumerate(train_ds):
+        list_img_index, max_unique_labels_num = data
+        anchor_img, pos_img, neg_img = list_img_index['anchor_img'], list_img_index['pos_img'], list_img_index['neg_img']
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
 
             # Run the forward pass of the layer. The operations that the layer applies to its inputs are going to be
             # recorded on the GradientTape.
             # Model expects 3 images, returns a dict of logits
-            logits_dict = model(anchor_img, pos_img, neg_img, training=True)  # Logits for this minibatch
+            logits_dict = model(anchor_img, pos_img, neg_img)  # Logits for this minibatch
 
             # Compute the loss value for this minibatch.
             neg_dist, pos_dist = lossless_triplet_loss(anchor=logits_dict['anchor_out'],
