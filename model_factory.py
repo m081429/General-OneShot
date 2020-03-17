@@ -2,8 +2,8 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
 from tensorflow.keras import Model
 
-from losses import triplet_loss
-#from losses import lossless_triplet_loss as triplet_loss 
+
+@tf.function
 class GetModel:
 
     def __init__(self, model_name=None, img_size=256, classes=1, weights='imagenet', retrain=True, num_layers=None):
@@ -105,7 +105,6 @@ class GetModel:
 
         return conv_model, preprocess
 
-
     def _get_optimizer(self, name, lr=0.001):
         if name == 'Adadelta':
             optimizer = tf.keras.optimizers.Adadelta(learning_rate=lr)
@@ -128,11 +127,11 @@ class GetModel:
 
         return optimizer
 
-    def compile_model(self, optimizer, lr, img_size=256):
+    def build_model(self, optimizer, lr, img_size=256):
         conv_model = self.model
 
         # Now I need to form my one-shot model structure
-        in_dims = [img_size, img_size, 3]
+        in_dims = [None, img_size, img_size, 3]
 
         # Create the 3 inputs
         anchor_in = Input(shape=in_dims, name='anchor')
@@ -144,19 +143,12 @@ class GetModel:
         pos_out = conv_model(pos_in)
         neg_out = conv_model(neg_in)
 
-        y_pred = tf.keras.layers.concatenate([anchor_out, pos_out, neg_out])
-
         # Define the trainable model
         model = Model(inputs=[{'anchor': anchor_in,
                                'pos_img': pos_in,
-                               'neg_img': neg_in}], outputs=y_pred)
-        model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss, metrics=[
-                          #tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
-                          tf.keras.metrics.AUC( name='AUC'),
-                          tf.keras.metrics.AUC( curve='PR',name='PR'),
-                          tf.keras.metrics.Accuracy(name='accuracy'),
-                          tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
-                          tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')
-                      ])
+                               'neg_img': neg_in}],
+                      outputs=[{'anchor_out': anchor_out,
+                                'pos_out': pos_out,
+                                'neg_out': neg_out}])
 
         return model
