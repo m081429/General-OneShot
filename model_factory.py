@@ -2,10 +2,9 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
 from tensorflow.keras import Model
 
-
 class GetModel:
 
-    def __init__(self, model_name=None, img_size=256, classes=1, weights='imagenet', retrain=True, num_layers=None):
+    def __init__(self, model_name=None, img_size=256, classes=128, weights='imagenet', retrain=True, num_layers=None):
         super().__init__()
         self.model_name = model_name
         self.img_size = img_size
@@ -75,10 +74,14 @@ class GetModel:
             preprocess = tf.keras.applications.resnet50.preprocess_input(input_tensor)
 
         elif self.model_name == 'VGG16':
-            print('Model loaded was VGG16')
             model = tf.keras.applications.VGG16(weights=weights, include_top=include_top,
                                                 input_tensor=input_tensor, input_shape=IMG_SHAPE)
             preprocess = tf.keras.applications.vgg16.preprocess_input(input_tensor)
+
+        elif self.model_name == 'VGG19':
+            model = tf.keras.applications.VGG19(weights=weights, include_top=include_top,
+                                                input_tensor=input_tensor, input_shape=IMG_SHAPE)
+            preprocess = tf.keras.applications.vgg19.preprocess_input(input_tensor)
 
         elif self.model_name == 'VGG19':
             model = tf.keras.applications.VGG19(weights=weights, include_top=include_top,
@@ -92,7 +95,7 @@ class GetModel:
         base_model = model
         x = base_model.output
         x = Flatten()(x)
-        out = Dense(1, activation='sigmoid')(x)
+        out = Dense(self.classes)(x)
         conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
@@ -104,7 +107,7 @@ class GetModel:
 
         return conv_model, preprocess
 
-    def _get_optimizer(self, name, lr=0.001):
+    def get_optimizer(self, name, lr=0.001):
         if name == 'Adadelta':
             optimizer = tf.keras.optimizers.Adadelta(learning_rate=lr)
         elif name == 'Adagrad':
@@ -127,9 +130,9 @@ class GetModel:
         return optimizer
 
 
-    def build_model(self, optimizer, lr, img_size=256):
+    def build_model(self, img_size=256):
         conv_model = self.model
-
+        return conv_model
         # Now I need to form my one-shot model structure
         in_dims = [img_size, img_size, 3]
 
@@ -145,8 +148,8 @@ class GetModel:
 
         # Define the trainable model
         model = Model(inputs=[anchor_in, pos_in, neg_in],
-                      outputs=[{'anchor_out': anchor_out,
-                                'pos_out': pos_out,
-                                'neg_out': neg_out}])
+                      outputs=[anchor_out,
+                               pos_out,
+                               neg_out])
 
         return model

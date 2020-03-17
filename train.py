@@ -9,7 +9,7 @@ from model_factory import GetModel
 from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
-from losses import lossless_triplet_loss
+from losses import triplet_loss as loss_fn
 
 ###############################################################################
 # Input Arguments
@@ -182,6 +182,7 @@ train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
                                                           "pos_img": [args.patch_size, args.patch_size, 3],
                                                           "neg_img": [args.patch_size, args.patch_size, 3]}, [3]))
 
+
 train_ds = train_ds.batch(args.BATCH_SIZE)
 training_steps = int(train_data.min_images / args.BATCH_SIZE)
 logger.debug('Completed Training dataset')
@@ -224,20 +225,11 @@ else:
 
 logger.debug('Mirror initialized')
 
-GPU = True
-if GPU is True:
-    # This must be fixed for multi-GPU
-    mirrored_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
-    with mirrored_strategy.scope():
-        m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
-        logger.debug('Model constructed')
-        model = m.build_model(args.optimizer, args.lr, img_size=args.patch_size)
-        logger.debug('Model compiled')
-else:
-    m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
-    logger.debug('Model constructed')
-    model = m.build_model(args.optimizer, args.lr, img_size=args.patch_size)
-    logger.debug('Model compiled')
+
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+logger.debug('Model constructed')
+model = m.build_model()
+logger.debug('Model compiled')
 
 out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
 
@@ -263,31 +255,32 @@ except ImportError:
 ###############################################################################
 # Run the training
 ###############################################################################
-
-epochs = 3
-for epoch in range(epochs):
+optimizer = m.get_optimizer(args.optimizer, )
+for epoch in range(args.num_epochs):
     print('Start of epoch %d' % (epoch,))
 
-    # Iterate over the batches of the dataset.  # TODO: Not sure I can iterate over a dictionary
+    # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
         list_img_index, max_unique_labels_num = data
         anchor_img, pos_img, neg_img = list_img_index['anchor_img'], list_img_index['pos_img'], list_img_index['neg_img']
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
 
-            # Run the forward pass of the layer. The operations that the layer applies to its inputs are going to be
-            # recorded on the GradientTape.
-            # Model expects 3 images, returns a dict of logits
-            logits_dict = model(anchor_img, pos_img, neg_img)  # Logits for this minibatch
+            z0 = model(anchor_img)
+            z1 = model(pos_img)
+            z2 = model(neg_img)
 
+            #print('z0: {}'.format(z0))
+            #print('z1: {}'.format(z1))
+            #print('z2: {}'.format(z2))
             # Compute the loss value for this minibatch.
-            neg_dist, pos_dist = lossless_triplet_loss(anchor=logits_dict['anchor_out'],
-                                                       positive=logits_dict['pos_out'],
-                                                       negative=logits_dict['neg_out'])
+            neg_dist, pos_dist = loss_fn(anchor=z0,
+                                                       positive=z1,
+                                                       negative=z2)
 
             # Returned both so I can print independent of each other
-            total_dist = neg_dist + pos_dist
-
+            total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 0)
+            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
         # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
         # to the loss.
         grads = tape.gradient(total_dist, model.trainable_weights)
@@ -295,11 +288,12 @@ for epoch in range(epochs):
         # Run one step of gradient descent by updating the value of the variables to minimize the loss.
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
-        # Log every 200 batches.
-        if step % 200 == 0:
-            tf.summary.scalar('Negative_distance', neg_dist, step=step)
-            tf.summary.scalar('Positive_distance', pos_dist, step=step)
-            tf.summary.scalar('Total_distance', total_dist, step=step)
-            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist))
+        print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
+        # Log every 200 batches. #TODO: Create summary file writer so I can write to tensorboard
+        # if step % 10 == 0:
+            # tf.summary.scalar('Negative_distance', neg_dist, step=step)
+            # tf.summary.scalar('Positive_distance', pos_dist, step=step)
+            # tf.summary.scalar('Total_distance', total_dist, step=step)
+
 
 model.save(os.path.join(out_dir, 'my_model.h5'))
