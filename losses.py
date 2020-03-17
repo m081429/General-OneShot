@@ -31,9 +31,9 @@ def triplet_loss(y_true, y_pred):
     return loss
 
 
-def lossless_triplet_loss(anchor=anchor_out,
-                          positive=pos_out,
-                          negative=neg_out, n=3, beta=None, epsilon=1e-8):
+def lossless_triplet_loss(anchor=None,
+                          positive=None,
+                          negative=None, n=3, beta=None, epsilon=1e-8):
     """
     Implementation of the triplet loss function
 
