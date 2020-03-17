@@ -72,14 +72,6 @@ parser.add_argument("-r", "--learning-rate",
                     help="Learning rate",
                     default=0.0001, type=float)
 
-parser.add_argument("-L", "--loss-function",
-                    dest='loss_function',
-                    default='BinaryCrossentropy',
-                    choices=['SparseCategoricalCrossentropy',
-                             'CategoricalCrossentropy',
-                             'BinaryCrossentropy', 'Hinge'],
-                    help="Loss functions from tf.keras")
-
 parser.add_argument("-e", "--num-epochs",
                     dest='num_epochs',
                     help="Number of epochs to use for training",
@@ -88,11 +80,6 @@ parser.add_argument("-e", "--num-epochs",
 parser.add_argument("-b", "--batch-size",
                     dest='BATCH_SIZE',
                     help="Number of batches to use for training",
-                    default=1, type=int)
-
-parser.add_argument("-w", "--num-workers",
-                    dest='NUM_WORKERS',
-                    help="Number of workers to use for training",
                     default=1, type=int)
 
 parser.add_argument("--use-multiprocessing",
@@ -112,11 +99,6 @@ parser.add_argument("-F", "--filetype",
                     default="images",
                     help="Set the logging level")
 
-parser.add_argument("-D", "--drop_out",
-                    dest="reg_drop_out_per",
-                    default=None, type=float,
-                    help="Regulrization drop out percent 0-1")
-
 parser.add_argument("--tfrecord_image",
                     dest="tfrecord_image",
                     default="image/encoded",
@@ -125,16 +107,6 @@ parser.add_argument("--tfrecord_image",
 parser.add_argument("--tfrecord_label",
                     dest="tfrecord_label",
                     default="null",
-                    help="Set the logging level")
-
-parser.add_argument("--train_num_layers",
-                    dest="train_num_layers",
-                    default=False,
-                    help="Set the logging level")
-
-parser.add_argument("--prev_checkpoint",
-                    dest="prev_checkpoint",
-                    default=False,
                     help="Set the logging level")
 
 args = parser.parse_args()
@@ -172,16 +144,16 @@ else:
 train_ds_dr = DataRunner(t_image_label_ds)
 logger.debug('Completed Data runner')
 train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
-                                          output_types=(
-                                              {
-                                                  "anchor_img": tf.float32,
-                                                  "pos_img": tf.float32,
-                                                  "neg_img": tf.float32
-                                              }, tf.int64),
-                                          output_shapes=({"anchor_img": [args.patch_size, args.patch_size, 3],
-                                                          "pos_img": [args.patch_size, args.patch_size, 3],
-                                                          "neg_img": [args.patch_size, args.patch_size, 3]}, [3]))
-
+                                          output_types=({
+                                                            "anchor_img": tf.float32,
+                                                            "pos_img": tf.float32,
+                                                            "neg_img": tf.float32
+                                                        }, tf.int64),
+                                          output_shapes=({
+                                                             "anchor_img": [args.patch_size, args.patch_size, 3],
+                                                             "pos_img": [args.patch_size, args.patch_size, 3],
+                                                             "neg_img": [args.patch_size, args.patch_size, 3]
+                                                         }, [3]))
 
 train_ds = train_ds.batch(args.BATCH_SIZE)
 training_steps = int(train_data.min_images / args.BATCH_SIZE)
@@ -205,15 +177,17 @@ if args.image_dir_validation:
         v_image_label_ds, validation_data.min_images = create_triplets_oneshot(v_image_ds)
     v_ds_dr = DataRunner(v_image_label_ds)
     logger.debug('Completed Data runner')
-    validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets, output_types=(
-        {
-            "anchor_img": tf.float32,
-            "pos_img": tf.float32,
-            "neg_img": tf.float32
-        }, tf.int64),
-                                                   output_shapes=({"anchor_img": [args.patch_size, args.patch_size, 3],
-                                                                   "pos_img": [args.patch_size, args.patch_size, 3],
-                                                                   "neg_img": [args.patch_size, args.patch_size, 3]},
+    validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets,
+                                                   output_types=({
+                                                                     "anchor_img": tf.float32,
+                                                                     "pos_img": tf.float32,
+                                                                     "neg_img": tf.float32
+                                                                 }, tf.int64),
+                                                   output_shapes=({
+                                                                      "anchor_img": [args.patch_size, args.patch_size,
+                                                                                     3],
+                                                                      "pos_img": [args.patch_size, args.patch_size, 3],
+                                                                      "neg_img": [args.patch_size, args.patch_size, 3]},
                                                                   [3]))
     validation_ds = validation_ds.batch(args.BATCH_SIZE).repeat()
     validation_steps = int(validation_data.min_images / args.BATCH_SIZE)
@@ -223,21 +197,12 @@ else:
     validation_ds = None
     validation_steps = None
 
-logger.debug('Mirror initialized')
-
-
 m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
 logger.debug('Model constructed')
 model = m.build_model()
-logger.debug('Model compiled')
+logger.debug('Model built')
 
 out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
-
-# restore weights if they already exist
-if os.path.exists(os.path.join(out_dir, 'my_model.h5')):
-    logger.debug('Loading initialized model')
-    model = tf.keras.load_model(os.path.join(out_dir, 'my_model.h5'))
-    logger.debug('Completed loading initialized model')
 
 ###############################################################################
 # Define callbacks
@@ -247,7 +212,8 @@ if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
 try:
-    tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True, show_layer_names=True)
+    tensorflow.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
+                              show_layer_names=True)
     logger.debug('Model image saved')
 except ImportError:
     print('No pydot available.  Skipping printing')
@@ -255,32 +221,35 @@ except ImportError:
 ###############################################################################
 # Run the training
 ###############################################################################
-optimizer = m.get_optimizer(args.optimizer, )
+optimizer = m.get_optimizer(args.optimizer)
+
 for epoch in range(args.num_epochs):
     print('Start of epoch %d' % (epoch,))
 
     # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
-        list_img_index, max_unique_labels_num = data
-        anchor_img, pos_img, neg_img = list_img_index['anchor_img'], list_img_index['pos_img'], list_img_index['neg_img']
+        img_data, labels = data
+        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
-
+            # Get embeddings for each image type
             z0 = model(anchor_img)
             z1 = model(pos_img)
             z2 = model(neg_img)
 
-            #print('z0: {}'.format(z0))
-            #print('z1: {}'.format(z1))
-            #print('z2: {}'.format(z2))
             # Compute the loss value for this minibatch.
-            neg_dist, pos_dist = loss_fn(anchor=z0,
-                                                       positive=z1,
-                                                       negative=z2)
-
             # Returned both so I can print independent of each other
-            total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 0)
-            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
+            # This function maximizes the distance between the anchor and negative case while minimizing the
+            # difference between the anchor and positive
+            neg_dist, pos_dist = loss_fn(anchor=z0,
+                                         positive=z1,
+                                         negative=z2)
+
+            # Ensure there is always a non-zero overall distance
+            total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 1e-8)
+            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\tOverall: {}'.format(step, neg_dist, pos_dist, total_dist),
+                  end='')
+
         # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
         # to the loss.
         grads = tape.gradient(total_dist, model.trainable_weights)
@@ -288,12 +257,13 @@ for epoch in range(args.num_epochs):
         # Run one step of gradient descent by updating the value of the variables to minimize the loss.
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
-        print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
         # Log every 200 batches. #TODO: Create summary file writer so I can write to tensorboard
         # if step % 10 == 0:
-            # tf.summary.scalar('Negative_distance', neg_dist, step=step)
-            # tf.summary.scalar('Positive_distance', pos_dist, step=step)
-            # tf.summary.scalar('Total_distance', total_dist, step=step)
+        # tf.summary.scalar('Negative_distance', neg_dist, step=step)
+        # tf.summary.scalar('Positive_distance', pos_dist, step=step)
+        # tf.summary.scalar('Total_distance', total_dist, step=step)
+        print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
 
+    print('')  # Create a newline
 
 model.save(os.path.join(out_dir, 'my_model.h5'))

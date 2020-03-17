@@ -7,7 +7,6 @@ class DataRunner:
         super().__init__()
         self.image_file_list = image_file_list
 
-
     @staticmethod
     def format_example(image_name=None, img_size=256, train=True):
         """
@@ -37,11 +36,4 @@ class DataRunner:
 
     def get_distributed_datasets(self):
         for i in self.image_file_list:
-            #a_img = self.format_example(i[0], img_size=self.image_size, train=self.train)
-            #p_img = self.format_example(i[1], img_size=self.image_size, train=self.train)
-            #n_img = self.format_example(i[2], img_size=self.image_size, train=self.train)
-            #yield [a_img,p_img,n_img], [1, 1, 0]
-            #yield {"anchor": a_img, "pos_img": p_img,"neg_img": n_img}, [1, 1, 0]
             yield {"anchor_img": i[0], "pos_img": i[1], "neg_img": i[2]}, [1, 1, 0]
-
-

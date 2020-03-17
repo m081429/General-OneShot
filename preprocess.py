@@ -1,13 +1,10 @@
-from random import shuffle, choice
 import os
 import logging
 import tensorflow as tf
-import sys
-from PIL import Image
+import random
 
 logger = logging.getLogger(__name__)
 global tf_image, tf_label, status
-import random
 
 
 class Preprocess:
@@ -84,8 +81,6 @@ def format_example(image_name=None, img_size=256):
     Apply any image preprocessing here
     :param image_name: the specific filename of the image
     :param img_size: size that images should be reshaped to
-    :param train: whether this is for training or not
-
     :return: image
     """
     global status
@@ -143,7 +138,6 @@ def format_example_tf(tfrecord_proto, img_size=256):
 # Create pairs for one shot learning
 
 def create_triplets_oneshot(t_image_ds):
-    min_images = 0
     list_images = []
     list_labels = []
     # adding images and labels to the list
@@ -186,7 +180,6 @@ def create_triplets_oneshot(t_image_ds):
 
 
 def create_triplets_oneshot_img(t_image_ds, t_label_ds):
-    min_images = 0
     list_images = []
     list_labels = []
     # adding images and labels to the list
@@ -231,7 +224,6 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
 
 
 def create_triplets_oneshot_old(t_image_ds):
-    min_images = 0
     list_images = []
     list_labels = []
     # adding images and labels to the list
