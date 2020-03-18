@@ -14,7 +14,7 @@
 #-e 50 -b 64  -V DEBUG \
 #--use-multiprocessing True --filetype tfrecords --tfrecord_label 'phenotype/subtype' --tfrecord_image 'image/encoded' --train_num_layers 0 
 #exit
-python /projects/shart/digital_pathology/scripts/General-OneShot/tfrecord_version/train.py  \
+python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/General-OneShot/train.py  \
 -t /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/train  \
 -v /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/val \
 -m ResNet50 \
