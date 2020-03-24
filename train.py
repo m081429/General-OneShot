@@ -322,15 +322,15 @@ if training_flag == 1:
         #sys.exit(0)
         
         
-    #epoch_lst=list(range(1,args.num_epochs+1,1))
+    epoch_lst=list(range(1,args.num_epochs+1,1))
     #PLOTING LOSS and accuracy
     #fig, axes = plt.subplots(1, sharex=True, figsize=(12, 8))
     fig, axes = plt.subplots(frameon=True, figsize=(12, 8))
     fig.suptitle('Training Metrics')
     axes.set_ylabel("Loss", fontsize=14)
     axes.set_xlabel("Epoch", fontsize=14)
-    axes.plot(epoch_lst,all_epoch_loss,'o')
-    axes.plot(epoch_lst,all_epoch_val_loss,'x')
+    axes.plot(epoch_lst,all_epoch_loss,color='k',label="train")
+    axes.plot(epoch_lst,all_epoch_val_loss,color='g',label="val")
     axes.legend(loc="upper left")
     plt.show()
     fig.savefig(os.path.join(out_dir, 'Loss.pdf'), bbox_inches='tight')  
