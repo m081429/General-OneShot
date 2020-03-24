@@ -213,7 +213,7 @@ logger.debug('Model built')
 #print(featured_img)
 
 out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
-training_flag=1
+training_flag=0
 if training_flag == 1:
     ###############################################################################
     # Define callbacks
@@ -281,8 +281,7 @@ if training_flag == 1:
             # tf.summary.scalar('Negative_distance', neg_dist, step=step)
             # tf.summary.scalar('Positive_distance', pos_dist, step=step)
             # tf.summary.scalar('Total_distance', total_dist, step=step)
-            #print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
-            #print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
+        #trimmed mean to exclude outlier loss values    
         strt=int(len(epoch_loss)*0.5)
         stp=int(len(epoch_loss)*0.95)
         epoch_loss_new=sorted(epoch_loss, key=float)[strt-1:stp]
