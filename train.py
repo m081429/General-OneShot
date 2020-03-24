@@ -10,7 +10,10 @@ from preprocess import Preprocess, format_example, format_example_tf, update_sta
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from losses import triplet_loss as loss_fn
-
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras import layers
+from tensorflow.keras import models
 ###############################################################################
 # Input Arguments
 ###############################################################################
@@ -135,11 +138,13 @@ if train_data.filetype != "tfrecords":
     t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
     t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
     t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
-    t_image_label_ds, train_data.min_images = create_triplets_oneshot_img(t_image_ds, t_label_ds)
+    #t_image_ds = tf.data.Dataset.zip((t_image_ds, t_label_ds))
+    #t_image_label_ds, train_data.min_images, t_image_label_ds_lb = create_triplets_oneshot(t_image_ds)
+    t_image_label_ds, train_data.min_images, t_image_label_ds_lb = create_triplets_oneshot_img(t_image_ds, t_label_ds)
 else:
     t_path_ds = tf.data.TFRecordDataset(train_data.files)
     t_image_ds = t_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
-    t_image_label_ds, train_data.min_images = create_triplets_oneshot(t_image_ds)
+    t_image_label_ds, train_data.min_images, t_image_label_ds_lb = create_triplets_oneshot(t_image_ds)
 
 train_ds_dr = DataRunner(t_image_label_ds)
 logger.debug('Completed Data runner')
@@ -170,11 +175,13 @@ if args.image_dir_validation:
         v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
         v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
         v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
-        v_image_label_ds, validation_data.min_images = create_triplets_oneshot_img(v_image_ds, v_label_ds)
+        v_image_label_ds, validation_data.min_images, v_image_label_ds_lb = create_triplets_oneshot_img(v_image_ds, v_label_ds)
+        #v_image_ds = tf.data.Dataset.zip((v_image_ds, v_label_ds))
+        #v_image_label_ds, validation_data.min_images, v_image_label_ds_lb = create_triplets_oneshot(v_image_ds)
     else:
         v_path_ds = tf.data.TFRecordDataset(validation_data.files)
         v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
-        v_image_label_ds, validation_data.min_images = create_triplets_oneshot(v_image_ds)
+        v_image_label_ds, validation_data.min_images, v_image_label_ds_lb = create_triplets_oneshot(v_image_ds)
     v_ds_dr = DataRunner(v_image_label_ds)
     logger.debug('Completed Data runner')
     validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets,
@@ -197,73 +204,152 @@ else:
     validation_ds = None
     validation_steps = None
 
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=train_data.classes)
 logger.debug('Model constructed')
 model = m.build_model()
 logger.debug('Model built')
 
+#featured_img = model.predict(np.ones((1,256,256,3)))
+#print(featured_img)
+
 out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+training_flag=0
+if training_flag == 1:
+    ###############################################################################
+    # Define callbacks
+    ###############################################################################
+    cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
-###############################################################################
-# Define callbacks
-###############################################################################
-cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
+    try:
+        tf.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
+                                  show_layer_names=True)
+        logger.debug('Model image saved')
+    except ImportError:
+        print('No pydot available.  Skipping printing')
 
-try:
-    tensorflow.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
-                              show_layer_names=True)
-    logger.debug('Model image saved')
-except ImportError:
-    print('No pydot available.  Skipping printing')
+    ###############################################################################
+    # Run the training
+    ###############################################################################
+    optimizer = m.get_optimizer(args.optimizer)
 
-###############################################################################
-# Run the training
-###############################################################################
-optimizer = m.get_optimizer(args.optimizer)
+    all_epoch_loss=[]
+    all_epoch_val_loss=[]
+    for epoch in range(args.num_epochs):
+        print('Start of epoch %d' % (epoch,))
+        epoch_loss=[]
+        epoch_val_loss=[]
+        # Iterate over the batches of the dataset.
+        #for step, data in enumerate(train_ds):
+        #    img_data, labels = data
+        step = 0
+        for img_data, labels in train_ds:
+            step+=1
+            if step == training_steps:
+                break
+            anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
+            # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
+            with tf.GradientTape() as tape:
+                # Get embeddings for each image type
+                z0 = model(anchor_img)
+                z1 = model(pos_img)
+                z2 = model(neg_img)
 
-for epoch in range(args.num_epochs):
-    print('Start of epoch %d' % (epoch,))
+                # Compute the loss value for this minibatch.
+                # Returned both so I can print independent of each other
+                # This function maximizes the distance between the anchor and negative case while minimizing the
+                # difference between the anchor and positive
+                neg_dist, pos_dist = loss_fn(anchor=z0, positive=z1, negative=z2)
+                # Ensure there is always a non-zero overall distance
+                total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 1e-8)
+                #total_dist =  tf.math.maximum(neg_dist - pos_dist + 0.002, 0)
+                val=round(float(np.mean(total_dist.numpy())),3)
+                #print(total_dist.numpy())
+                #print('Step: {}\tOverall: {}\n'.format(step,val),end='')
+                epoch_loss.append(val)
+                #print('\rStep: {}\nNeg_Loss: {}\nPos_Loss: {}\nOverall: {}\n'.format(step, neg_dist, pos_dist, total_dist),end='')
+            # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
+            # to the loss.
+            #grads = tape.gradient(total_dist, model.trainable_weights)
+            grads = tape.gradient(total_dist, model.trainable_variables)
+            # Run one step of gradient descent by updating the value of the variables to minimize the loss.
+            #optimizer.apply_gradients(zip(grads, model.trainable_weights))
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+            # Log every 200 batches. #TODO: Create summary file writer so I can write to tensorboard
+            # if step % 10 == 0:
+            # tf.summary.scalar('Negative_distance', neg_dist, step=step)
+            # tf.summary.scalar('Positive_distance', pos_dist, step=step)
+            # tf.summary.scalar('Total_distance', total_dist, step=step)
+        #trimmed mean to exclude outlier loss values    
+        strt=int(len(epoch_loss)*0.5)
+        stp=int(len(epoch_loss)*0.95)
+        epoch_loss_new=sorted(epoch_loss, key=float)[strt-1:stp]
+        val=round(float(np.mean(epoch_loss_new)),3)
+        print('Epoch Train : {}\tOverall: {}\n'.format(epoch,val),end='')
+        all_epoch_loss.append(val)
+        
+        model.save(os.path.join(out_dir, 'my_model.h5'))
+        print("validation Loss")
+        # validation Loss
 
-    # Iterate over the batches of the dataset.
-    for step, data in enumerate(train_ds):
-        img_data, labels = data
-        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-        # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
-        with tf.GradientTape() as tape:
+        epoch_val_loss=[]
+        step = 0
+        for img_data, labels in validation_ds:
+            step+=1
+            if step == validation_steps:
+                break
+            anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
             # Get embeddings for each image type
             z0 = model(anchor_img)
             z1 = model(pos_img)
             z2 = model(neg_img)
+            neg_dist, pos_dist = loss_fn(anchor=z0, positive=z1, negative=z2)
+            total_dist =  tf.math.maximum(neg_dist + pos_dist+1e-3, 1e-3)
+            val=round(float(np.mean(total_dist.numpy())),3)
+            #print(step,val)
+            epoch_val_loss.append(val)
+        #sys.exit(0)          
+        #print('')  # Create a newline
+        #ignoring extreme values
+        strt=int(len(epoch_val_loss)*0.5)
+        stp=int(len(epoch_val_loss)*0.95)
+        epoch_val_loss_new=sorted(epoch_val_loss, key=float)[strt-1:stp]
+        val=round(float(np.mean(epoch_val_loss_new)),3)
+        print('Epoch Val: {}\tOverall: {}\n'.format(epoch,val),end='')
+        all_epoch_val_loss.append(val)
+        #sys.exit(0)
+        
+        
+    epoch_lst=list(range(1,args.num_epochs+1,1))
+    #PLOTING LOSS and accuracy
+    #fig, axes = plt.subplots(1, sharex=True, figsize=(12, 8))
+    fig, axes = plt.subplots(frameon=True, figsize=(12, 8))
+    fig.suptitle('Training Metrics')
+    axes.set_ylabel("Loss", fontsize=14)
+    axes.set_xlabel("Epoch", fontsize=14)
+    axes.plot(epoch_lst,all_epoch_loss,color='k',label="train")
+    axes.plot(epoch_lst,all_epoch_val_loss,color='g',label="val")
+    axes.legend(loc="upper left")
+    plt.show()
+    fig.savefig(os.path.join(out_dir, 'Loss.pdf'), bbox_inches='tight')  
+    #model.save(os.path.join(out_dir, 'my_model.h5'))
+    
 
-            # Compute the loss value for this minibatch.
-            # Returned both so I can print independent of each other
-            # This function maximizes the distance between the anchor and negative case while minimizing the
-            # difference between the anchor and positive
-            neg_dist, pos_dist = loss_fn(anchor=z0,
-                                         positive=z1,
-                                         negative=z2)
+#calculating accuracy for training
+print("Loading Model")
+new_model = models.load_model(os.path.join(out_dir, 'my_model.h5'), custom_objects={'triplet_loss': loss_fn})
 
-            # Ensure there is always a non-zero overall distance
-            total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 1e-8)
-            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\tOverall: {}'.format(step, neg_dist, pos_dist, total_dist),
-                  end='')
-
-        # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
-        # to the loss.
-        grads = tape.gradient(total_dist, model.trainable_weights)
-
-        # Run one step of gradient descent by updating the value of the variables to minimize the loss.
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
-        # Log every 200 batches. #TODO: Create summary file writer so I can write to tensorboard
-        # if step % 10 == 0:
-        # tf.summary.scalar('Negative_distance', neg_dist, step=step)
-        # tf.summary.scalar('Positive_distance', pos_dist, step=step)
-        # tf.summary.scalar('Total_distance', total_dist, step=step)
-        print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
-
-    print('')  # Create a newline
-
-model.save(os.path.join(out_dir, 'my_model.h5'))
+for img_data, labels in train_ds:
+    #img_data, labels = data
+    print(labels.numpy())
+    anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
+    result = np.asarray(new_model.predict([anchor_img, pos_img, neg_img]))
+    print(result)
+    result = np.asarray(new_model.predict([anchor_img, neg_img, pos_img]))
+    print(result)
+    result = np.asarray(new_model.predict([anchor_img, neg_img, neg_img]))
+    print(result)
+    result = np.asarray(new_model.predict([anchor_img, pos_img, pos_img]))
+    print(result)
+    sys.exit(0)
