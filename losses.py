@@ -1,7 +1,9 @@
 import tensorflow as tf
 
 
-def triplet_loss(y_true, y_pred):
+def triplet_loss(anchor=None,
+                 positive=None,
+                 negative=None):
     """
     Implementation of the triplet loss function
     Arguments:
@@ -13,25 +15,18 @@ def triplet_loss(y_true, y_pred):
     Returns:
     loss -- real number, value of the loss
     """
-    alpha = 0.2
 
-    anchor, positive, negative = tf.split(y_pred, num_or_size_splits=3, axis=1)
+    # minimize the distance between the anchor and the positive
+    pos_dist = -tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
+    # maximize distance between the anchor and the negative
+    neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
 
-    # distance between the anchor and the positive
-    pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)))
-
-    # distance between the anchor and the negative
-    neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)))
-
-    # compute loss
-    basic_loss = pos_dist - neg_dist + alpha
-
-    loss = tf.maximum(basic_loss, 0.0)
-
-    return loss
+    return neg_dist, pos_dist
 
 
-def lossless_triplet_loss(y_true, y_pred, n=3, beta=3, epsilon=1e-8):
+def lossless_triplet_loss(anchor=None,
+                          positive=None,
+                          negative=None, n=3, beta=None, epsilon=1e-8):
     """
     Implementation of the triplet loss function
 
@@ -49,22 +44,18 @@ def lossless_triplet_loss(y_true, y_pred, n=3, beta=3, epsilon=1e-8):
     Returns:
     loss -- real number, value of the loss
     """
-
-    anchor, positive, negative = tf.split(y_pred, num_or_size_splits=3, axis=1)
+    if beta is None:
+        beta = n
     # distance between the anchor and the positive
     pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
     # distance between the anchor and the negative
     neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
 
-    #print('\n\tLinear distances for pos_dist and neg_dist are {} and {}'.format(pos_dist,neg_dist ))
     # Non Linear Values
-
     # -ln(-x/N+1)
     pos_dist = -tf.math.log(-tf.divide(pos_dist, beta) + 1 + epsilon)
     neg_dist = -tf.math.log(-tf.divide((n - neg_dist), beta) + 1 + epsilon)
-    #print('\tNon-Linear distances for pos_dist and neg_dist are {} and {}\n'.format(pos_dist,neg_dist))
 
-    # compute loss
-    loss = neg_dist + pos_dist
+    return neg_dist, pos_dist
 
-    return loss
+
