@@ -206,6 +206,10 @@ else:
     validation_ds = None
     validation_steps = None
 
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+logger.debug('Model constructed')
+model = m.build_model()
+logger.debug('Model built')
 
 
 # ####################################################################
