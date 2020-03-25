@@ -136,7 +136,6 @@ def format_example_tf(tfrecord_proto, img_size=256):
 
 
 # Create pairs for one shot learning
-
 def create_triplets_oneshot(t_image_ds):
     list_images = []
     list_labels = []
@@ -220,48 +219,4 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
             tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
             # extracting actual images with selected indexes for each class 'a','p' & 'n'
             list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
-    return list_img_index, max_unique_labels_num
-
-
-def create_triplets_oneshot_old(t_image_ds):
-    list_images = []
-    list_labels = []
-    # adding images and labels to the list
-    for image, label in t_image_ds:
-        list_images.append(image)
-        list_labels.append(label.numpy())
-    # unique labels
-    unique_labels = list(set(list_labels))
-    unique_labels_num = []
-    unique_labels_index = []
-    # creating array of indexes per label and number of images per label
-    for label in unique_labels:
-        inx = [x for x in range(0, len(list_labels)) if list_labels[x] == label]
-        unique_labels_num.append(len(inx))
-        unique_labels_index.append(inx)
-    # max number of images per label category
-    max_unique_labels_num = max(unique_labels_num)
-    # making all categories in to same number of images
-    for i in range(0, len(unique_labels_num)):
-        if unique_labels_num[i] != max_unique_labels_num:
-            tmp_labels_index = unique_labels_index[i]
-            sampling = random.choices(tmp_labels_index, k=(max_unique_labels_num - unique_labels_num[i]))
-            tmp_labels_index = tmp_labels_index + sampling
-            unique_labels_index[i] = tmp_labels_index
-            unique_labels_num[i] = len(tmp_labels_index)
-
-    list_img_index = []
-    for i in range(0, max_unique_labels_num):
-        tmp_a_idx = random.choices(range(0, len(unique_labels)), k=1)[0]
-        tmp_p_idx = tmp_a_idx
-        tmp_unique_labels = list(range(0, len(unique_labels)))
-        tmp_unique_labels.remove(tmp_p_idx)
-        tmp_n_idx = random.choices(tmp_unique_labels, k=1)[0]
-        tmp_a_idx_img = random.choices(unique_labels_index[tmp_a_idx], k=1)[0]
-        # making sure different img for a and p_img_index
-        idx_tmp = unique_labels_index[tmp_p_idx].remove(tmp_a_idx_img)
-        tmp_p_idx_img = random.choices(idx_tmp, k=1)[0]
-        tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
-
-        list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
     return list_img_index, max_unique_labels_num

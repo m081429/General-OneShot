@@ -1,11 +1,13 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
+from tensorflow.keras.layers import Input, Dense, Flatten
 from tensorflow.keras import Model
-
+from layers import TripletLossLayer
+# from layers import LosslessTripletLossLayer as TripletLossLayer   # Not working yet
 
 class GetModel:
 
-    def __init__(self, model_name=None, img_size=256, classes=128, weights='imagenet', retrain=True, num_layers=None):
+    def __init__(self, model_name=None, img_size=256, classes=128, weights='imagenet', retrain=True, num_layers=None,
+                 margin=0.2):
         super().__init__()
         self.model_name = model_name
         self.img_size = img_size
@@ -13,6 +15,7 @@ class GetModel:
         self.weights = weights
         self.num_layers = num_layers
         self.model, self.preprocess = self.__get_model_and_preprocess(retrain)
+        self.margin = margin
 
     def __get_model_and_preprocess(self, retrain):
         if retrain is True:
@@ -96,7 +99,9 @@ class GetModel:
         base_model = model
         x = base_model.output
         x = Flatten()(x)
-        out = Dense(self.classes)(x)
+        if retrain is True:
+            x = tf.keras.layers.Dropout(rate=0.2)(x)
+        out = Dense(self.classes, bias_regularizer=tf.keras.regularizers.l2(0.01))(x)
         conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
@@ -132,3 +137,25 @@ class GetModel:
 
     def build_model(self):
         return self.model
+
+
+def build_triplet_model(patch_size, model, margin=0.2, color_channels=3):
+    input_shape = (patch_size, patch_size, color_channels)
+
+    anchor_input = Input(input_shape, name="anchor_input")
+    positive_input = Input(input_shape, name="positive_input")
+    negative_input = Input(input_shape, name="negative_input")
+
+    # Generate the encodings (feature vectors) for the three images
+    encoded_a = model(anchor_input)
+    encoded_p = model(positive_input)
+    encoded_n = model(negative_input)
+
+    # TripletLoss Layer
+    loss_layer = TripletLossLayer(alpha=margin, name='triplet_loss_layer')([encoded_a, encoded_p, encoded_n])
+
+    # Connect the inputs with the outputs
+    network_train = Model(inputs=[anchor_input, positive_input, negative_input], outputs=loss_layer)
+
+    # return the model
+    return network_train

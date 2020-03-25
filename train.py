@@ -5,12 +5,16 @@ import os
 import sys
 import tensorflow as tf
 from callbacks import CallBacks
-from model_factory import GetModel
+from model_factory import GetModel, build_triplet_model
 from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
-from losses import triplet_loss as loss_fn
+from steps import write_tb
 
+import re
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+tf.config.set_soft_device_placement(True)
+# tf.debugging.set_log_device_placement(True)
 ###############################################################################
 # Input Arguments
 ###############################################################################
@@ -62,6 +66,11 @@ parser.add_argument("-p", "--patch_size",
                     help="Patch size to use for training",
                     default=256, type=int)
 
+parser.add_argument("-c", "--nb_classes",
+                    dest='nb_classes',
+                    help="How many classes are there to differentiate",
+                    default=2, type=int)
+
 parser.add_argument("-l", "--log_dir",
                     dest='log_dir',
                     default='log_dir',
@@ -81,11 +90,6 @@ parser.add_argument("-b", "--batch-size",
                     dest='BATCH_SIZE',
                     help="Number of batches to use for training",
                     default=1, type=int)
-
-parser.add_argument("--use-multiprocessing",
-                    help="Whether or not to use multiprocessing",
-                    const=True, default=False, nargs='?',
-                    type=bool)
 
 parser.add_argument("-V", "--verbose",
                     dest="logLevel",
@@ -108,6 +112,11 @@ parser.add_argument("--tfrecord_label",
                     dest="tfrecord_label",
                     default="null",
                     help="Set the logging level")
+
+parser.add_argument('-f', "--log_freq",
+                    dest="log_freq",
+                    default=25,
+                    help="Set the logging frequency for saving Tensorboard updates")
 
 args = parser.parse_args()
 
@@ -197,12 +206,33 @@ else:
     validation_ds = None
     validation_steps = None
 
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
-logger.debug('Model constructed')
-model = m.build_model()
-logger.debug('Model built')
 
+
+# ####################################################################
+# Temporary cleaning function
+# ####################################################################
 out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+checkpoint_name = 'training_checkpoints'
+
+overwrite = True
+if overwrite is True:
+    for root, dirs, files in os.walk(out_dir):
+        for file in filter(lambda x: re.match(checkpoint_name, x), files):
+            print('Removing: {}'.format(os.path.join(root, file)))
+            os.remove(os.path.join(root, file))
+        for file in filter(lambda x: re.match('checkpoint', x), files):
+            print('Removing: {}'.format(os.path.join(root, file)))
+            os.remove(os.path.join(root, file))
+        for file in filter(lambda x: re.match('events', x), files):
+            print('Removing: {}'.format(os.path.join(root, file)))
+            os.remove(os.path.join(root, file))
+        for file in filter(lambda x: re.match('ckpt', x), files):
+            print('Removing: {}'.format(os.path.join(root, file)))
+            os.remove(os.path.join(root, file))
+        for file in filter(lambda x: re.match('siamese', x), files):
+            print('Removing: {}'.format(os.path.join(root, file)))
+            os.remove(os.path.join(root, file))
+
 
 ###############################################################################
 # Define callbacks
@@ -211,59 +241,82 @@ cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
+
+###############################################################################
+# Build model
+###############################################################################
+
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+logger.debug('Model constructed')
+model = m.build_model()
+logger.debug('Model built')
+
+
+# Combine triplet Model
+siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
+optimizer = m.get_optimizer(args.optimizer)
+
+checkpoint_prefix = os.path.join(out_dir, checkpoint_name)
+writer = tf.summary.create_file_writer(out_dir)
+checkpoint = tf.train.Checkpoint(model=siamese_net, optimizer=optimizer, step=tf.Variable(1))
+manager = tf.train.CheckpointManager(checkpoint, out_dir, max_to_keep=3)
+checkpoint.restore(manager.latest_checkpoint)  # Restore if necessary
+
 try:
-    tensorflow.keras.utils.plot_model(model, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
+    tf.keras.utils.plot_model(siamese_net, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
                               show_layer_names=True)
     logger.debug('Model image saved')
 except ImportError:
     print('No pydot available.  Skipping printing')
 
+siamese_net.summary()
 ###############################################################################
 # Run the training
 ###############################################################################
-optimizer = m.get_optimizer(args.optimizer)
-
 for epoch in range(args.num_epochs):
-    print('Start of epoch %d' % (epoch,))
-
+    print('Start of epoch %d' % (epoch))
+    metadata_file = os.path.join(out_dir, 'metadata.tsv')
+    if os.path.exists(metadata_file):
+        os.remove(metadata_file)
+    f = open(metadata_file, 'a')
     # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
         img_data, labels = data
         anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
+
+        # write example metadata for embedding visualization
+        if step < 1000:
+            label = ['anchor', 'pos', 'neg']
+            for i in range(0, 3):
+                f.write("Step_{}_{}\t{}\n".format(step, label[i], data[1].numpy()[0][i]))
+
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
-            # Get embeddings for each image type
-            z0 = model(anchor_img)
-            z1 = model(pos_img)
-            z2 = model(neg_img)
-
-            # Compute the loss value for this minibatch.
-            # Returned both so I can print independent of each other
-            # This function maximizes the distance between the anchor and negative case while minimizing the
-            # difference between the anchor and positive
-            neg_dist, pos_dist = loss_fn(anchor=z0,
-                                         positive=z1,
-                                         negative=z2)
-
-            # Ensure there is always a non-zero overall distance
-            total_dist = tf.math.maximum(neg_dist + pos_dist + 1e-8, 1e-8)
-            print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\tOverall: {}'.format(step, neg_dist, pos_dist, total_dist),
-                  end='')
+            loss, neg_loss, pos_loss = siamese_net([anchor_img, pos_img, neg_img])
 
         # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
         # to the loss.
-        grads = tape.gradient(total_dist, model.trainable_weights)
+        grads = tape.gradient(loss, siamese_net.trainable_weights)
 
         # Run one step of gradient descent by updating the value of the variables to minimize the loss.
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        optimizer.apply_gradients(zip(grads, siamese_net.trainable_weights))
 
-        # Log every 200 batches. #TODO: Create summary file writer so I can write to tensorboard
-        # if step % 10 == 0:
-        # tf.summary.scalar('Negative_distance', neg_dist, step=step)
-        # tf.summary.scalar('Positive_distance', pos_dist, step=step)
-        # tf.summary.scalar('Total_distance', total_dist, step=step)
-        print('\rStep: {}\tNeg_Loss: {}\tPos_Loss: {}\t'.format(step, neg_dist, pos_dist), end='')
+        print('\rEpoch:{}\tStep:{}\tLoss:{:0.4f}\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\t'.format(epoch,
+                                                                                               step,
+                                                                                               loss,
+                                                                                               neg_loss[0],
+                                                                                               pos_loss[0]), end='')
+        if step % args.log_freq == 0 and step > 0:
+            checkpoint.step.assign(step)
+            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, siamese_net)
+            manager.save()
+            siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
 
+    print('\rEpoch:{}\tStep:{}\tLoss:{:0.4f}\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\t'.format(epoch,
+                                                                                           step,
+                                                                                           loss,
+                                                                                           neg_loss[0],
+                                                                                           pos_loss[0]), end='')
     print('')  # Create a newline
-
-model.save(os.path.join(out_dir, 'my_model.h5'))
+    manager.save()
+manager.save()

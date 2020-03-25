@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-
+@tf.function
 def triplet_loss(anchor=None,
                  positive=None,
                  negative=None):
@@ -17,13 +17,13 @@ def triplet_loss(anchor=None,
     """
 
     # minimize the distance between the anchor and the positive
-    pos_dist = -tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
+    pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
     # maximize distance between the anchor and the negative
     neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
 
     return neg_dist, pos_dist
 
-
+@tf.function
 def lossless_triplet_loss(anchor=None,
                           positive=None,
                           negative=None, n=3, beta=None, epsilon=1e-8):
