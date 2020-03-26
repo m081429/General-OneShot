@@ -13,6 +13,9 @@ from steps import write_tb
 
 import re
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
+    exit()
+
 tf.config.set_soft_device_placement(True)
 # tf.debugging.set_log_device_placement(True)
 ###############################################################################
@@ -32,8 +35,9 @@ parser.add_argument("-v", "--image_dir_validation",
 
 parser.add_argument("-m", "--model-name",
                     dest='model_name',
-                    default='VGG16',
-                    choices=['DenseNet121',
+                    default='custom',
+                    choices=['custom',
+                            'DenseNet121',
                              'DenseNet169',
                              'DenseNet201',
                              'InceptionResNetV2',
@@ -66,9 +70,9 @@ parser.add_argument("-p", "--patch_size",
                     help="Patch size to use for training",
                     default=256, type=int)
 
-parser.add_argument("-c", "--nb_classes",
-                    dest='nb_classes',
-                    help="How many classes are there to differentiate",
+parser.add_argument("-c", "--embedding_size",
+                    dest='embedding_size',
+                    help="How large should the embedding dimension be",
                     default=2, type=int)
 
 parser.add_argument("-l", "--log_dir",
@@ -115,7 +119,7 @@ parser.add_argument("--tfrecord_label",
 
 parser.add_argument('-f', "--log_freq",
                     dest="log_freq",
-                    default=25,
+                    default=100,
                     help="Set the logging frequency for saving Tensorboard updates")
 
 args = parser.parse_args()
@@ -144,7 +148,7 @@ if train_data.filetype != "tfrecords":
     t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
     t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
     t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
-    t_image_label_ds, train_data.min_images = create_triplets_oneshot_img(t_image_ds, t_label_ds)
+    t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds)
 else:
     t_path_ds = tf.data.TFRecordDataset(train_data.files)
     t_image_ds = t_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
@@ -179,7 +183,7 @@ if args.image_dir_validation:
         v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
         v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
         v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
-        v_image_label_ds, validation_data.min_images = create_triplets_oneshot_img(v_image_ds, v_label_ds)
+        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img(v_image_ds, v_label_ds)
     else:
         v_path_ds = tf.data.TFRecordDataset(validation_data.files)
         v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
@@ -205,12 +209,6 @@ if args.image_dir_validation:
 else:
     validation_ds = None
     validation_steps = None
-
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
-logger.debug('Model constructed')
-model = m.build_model()
-logger.debug('Model built')
-
 
 # ####################################################################
 # Temporary cleaning function
@@ -250,11 +248,10 @@ if not os.path.exists(out_dir):
 # Build model
 ###############################################################################
 
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, classes=128)
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size, num_layers=3)
 logger.debug('Model constructed')
 model = m.build_model()
 logger.debug('Model built')
-
 
 # Combine triplet Model
 siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
@@ -272,19 +269,24 @@ try:
     logger.debug('Model image saved')
 except ImportError:
     print('No pydot available.  Skipping printing')
+    siamese_net.summary()
 
-siamese_net.summary()
 ###############################################################################
 # Run the training
 ###############################################################################
+correct = 0
+results = []
+sliding_window_size = 50
+
 for epoch in range(args.num_epochs):
-    print('Start of epoch %d' % (epoch))
+    print('Start of epoch {}'.format(epoch))
     metadata_file = os.path.join(out_dir, 'metadata.tsv')
     if os.path.exists(metadata_file):
         os.remove(metadata_file)
     f = open(metadata_file, 'a')
     # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
+        step += 1
         img_data, labels = data
         anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
 
@@ -305,22 +307,36 @@ for epoch in range(args.num_epochs):
         # Run one step of gradient descent by updating the value of the variables to minimize the loss.
         optimizer.apply_gradients(zip(grads, siamese_net.trainable_weights))
 
-        print('\rEpoch:{}\tStep:{}\tLoss:{:0.4f}\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\t'.format(epoch,
-                                                                                               step,
-                                                                                               loss,
-                                                                                               neg_loss[0],
-                                                                                               pos_loss[0]), end='')
+        # Maintain tracking of re
+        if neg_loss[0] < pos_loss[0]:
+            results.append(1)
+        else:
+            results.append(0)
+        # Trim results to last N samples
+        if step > 50:
+            results = results[-sliding_window_size:]
+        correct = sum(results)
+        try:
+            percent_correct = sum(results) / len(results) * 100
+        except ZeroDivisionError:
+            percent_correct = 0
+        print('\rEpoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'.format(
+                                                                                                epoch,
+                                                                                                step,
+                                                                                                correct,
+                                                                                                percent_correct,
+                                                                                                neg_loss[0],
+                                                                                                pos_loss[0],
+                                                                                                loss
+                                                                                               ),
+
+              end='')
         if step % args.log_freq == 0 and step > 0:
             checkpoint.step.assign(step)
-            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, siamese_net)
+            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, correct / step * 100)
             manager.save()
             siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
 
-    print('\rEpoch:{}\tStep:{}\tLoss:{:0.4f}\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\t'.format(epoch,
-                                                                                           step,
-                                                                                           loss,
-                                                                                           neg_loss[0],
-                                                                                           pos_loss[0]), end='')
     print('')  # Create a newline
     manager.save()
 manager.save()

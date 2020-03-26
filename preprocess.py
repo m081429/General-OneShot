@@ -181,6 +181,17 @@ def create_triplets_oneshot(t_image_ds):
 
 
 def create_triplets_oneshot_img(t_image_ds, t_label_ds):
+    """
+
+    Args:
+        t_image_ds: image list
+        t_label_ds: image class
+
+    Returns:
+            list_img_index: a set of images
+            max_unique_labels_num: number of images that will be in a batch (so we dont over represent one class)
+            list_img_label: a label for each of the three images in a triplet (e.g. [0, 0, 1])
+    """
     list_images = []
     list_labels = []
     # adding images and labels to the list
@@ -222,5 +233,5 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
             tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
             # extracting actual images with selected indexes for each class 'a','p' & 'n'
             list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
-            list_img_label.append([tmp_a_idx,tmp_p_idx,tmp_n_idx])
+            list_img_label.append([tmp_a_idx, tmp_p_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label

@@ -4,14 +4,22 @@ from tensorflow.keras import Model
 from layers import TripletLossLayer
 # from layers import LosslessTripletLossLayer as TripletLossLayer   # Not working yet
 
+def custom(input_tensor, nn_size=128):
+    x = tf.keras.layers.Conv2D(nn_size, 3, activation=tf.nn.relu, data_format="channels_last")(input_tensor)
+    x = tf.keras.layers.Conv2D(nn_size, 3, activation=tf.nn.relu)(x)
+    x = tf.keras.layers.LayerNormalization()(x)
+    x = tf.keras.layers.ReLU()(x)
+    model = tf.keras.Model(inputs=input_tensor, outputs=x)
+    return model
+
 class GetModel:
 
-    def __init__(self, model_name=None, img_size=256, classes=128, weights='imagenet', retrain=True, num_layers=None,
+    def __init__(self, model_name=None, img_size=256, embedding_size=128, weights='imagenet', retrain=True, num_layers=None,
                  margin=0.2):
         super().__init__()
         self.model_name = model_name
         self.img_size = img_size
-        self.classes = classes
+        self.embedding_size = embedding_size
         self.weights = weights
         self.num_layers = num_layers
         self.model, self.preprocess = self.__get_model_and_preprocess(retrain)
@@ -92,6 +100,9 @@ class GetModel:
                                                 input_tensor=input_tensor, input_shape=IMG_SHAPE)
             preprocess = tf.keras.applications.vgg19.preprocess_input(input_tensor)
 
+        elif self.model_name == 'custom':
+            model = custom(input_tensor, nn_size=64)
+            preprocess = None
         else:
             raise AttributeError("{} not found in available models".format(self.model_name))
 
@@ -101,7 +112,7 @@ class GetModel:
         x = Flatten()(x)
         if retrain is True:
             x = tf.keras.layers.Dropout(rate=0.2)(x)
-        out = Dense(self.classes, bias_regularizer=tf.keras.regularizers.l2(0.01))(x)
+        out = Dense(self.embedding_size, bias_regularizer=tf.keras.regularizers.l2(0.01))(x)
         conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
