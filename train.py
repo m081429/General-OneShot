@@ -333,7 +333,7 @@ for epoch in range(args.num_epochs):
               end='')
         if step % args.log_freq == 0 and step > 0:
             checkpoint.step.assign(step)
-            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, correct / step * 100)
+            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, percent_correct)
             manager.save()
             siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
 
