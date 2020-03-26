@@ -10,6 +10,7 @@ from preprocess import Preprocess, format_example, format_example_tf, update_sta
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from steps import write_tb
+import tensorflow_addons as tfa
 
 import re
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -79,6 +80,11 @@ parser.add_argument("-l", "--log_dir",
                     dest='log_dir',
                     default='log_dir',
                     help="Place to store the tensorboard logs")
+
+parser.add_argument("-L", "--nb_layers",
+                    dest='nb_layers',
+                    default=5, type=int,
+                    help="Maximum number of layers to train in the model")
 
 parser.add_argument("-r", "--learning-rate",
                     dest='lr',
@@ -248,7 +254,7 @@ if not os.path.exists(out_dir):
 # Build model
 ###############################################################################
 
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size, num_layers=3)
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size, num_layers=args.nb_layers)
 logger.debug('Model constructed')
 model = m.build_model()
 logger.debug('Model built')
@@ -273,20 +279,19 @@ except ImportError:
 
 ###############################################################################
 # Run the training
-###############################################################################
+##############################################################################
 correct = 0
 results = []
 sliding_window_size = 50
-
-for epoch in range(args.num_epochs):
-    print('Start of epoch {}'.format(epoch))
+prev_step = 1   # Adding this variable so that tensorboard doesn't revert to step 1, at epoch 2
+for epoch in range(1, args.num_epochs + 1):
     metadata_file = os.path.join(out_dir, 'metadata.tsv')
     if os.path.exists(metadata_file):
         os.remove(metadata_file)
     f = open(metadata_file, 'a')
     # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
-        step += 1
+        step += prev_step
         img_data, labels = data
         anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
 
@@ -308,7 +313,7 @@ for epoch in range(args.num_epochs):
         optimizer.apply_gradients(zip(grads, siamese_net.trainable_weights))
 
         # Maintain tracking of re
-        if neg_loss[0] < pos_loss[0]:
+        if neg_loss < pos_loss:
             results.append(1)
         else:
             results.append(0)
@@ -325,18 +330,18 @@ for epoch in range(args.num_epochs):
                                                                                                 step,
                                                                                                 correct,
                                                                                                 percent_correct,
-                                                                                                neg_loss[0],
-                                                                                                pos_loss[0],
+                                                                                                neg_loss,
+                                                                                                pos_loss,
                                                                                                 loss
                                                                                                ),
 
               end='')
         if step % args.log_freq == 0 and step > 0:
             checkpoint.step.assign(step)
-            write_tb(writer, step, neg_loss[0], pos_loss[0], loss, percent_correct)
+            write_tb(writer, step, neg_loss, pos_loss, loss, percent_correct)
             manager.save()
             siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
-
     print('')  # Create a newline
+    prev_step = step
     manager.save()
 manager.save()

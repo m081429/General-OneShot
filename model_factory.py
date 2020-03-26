@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, Flatten
 from tensorflow.keras import Model
 from layers import TripletLossLayer
+
+
 # from layers import LosslessTripletLossLayer as TripletLossLayer   # Not working yet
 
 def custom(input_tensor, nn_size=128):
@@ -12,9 +14,11 @@ def custom(input_tensor, nn_size=128):
     model = tf.keras.Model(inputs=input_tensor, outputs=x)
     return model
 
+
 class GetModel:
 
-    def __init__(self, model_name=None, img_size=256, embedding_size=128, weights='imagenet', retrain=True, num_layers=None,
+    def __init__(self, model_name=None, img_size=256, embedding_size=128, weights='imagenet', retrain=True,
+                 num_layers=None,
                  margin=0.2):
         super().__init__()
         self.model_name = model_name
@@ -106,22 +110,26 @@ class GetModel:
         else:
             raise AttributeError("{} not found in available models".format(self.model_name))
 
-        # Add a global average pooling and change the output size to our number of classes
+        # Add a global average pooling and change the output size to our number of embedding nodes
         base_model = model
         x = base_model.output
         x = Flatten()(x)
+
         if retrain is True:
             x = tf.keras.layers.Dropout(rate=0.2)(x)
-        out = Dense(self.embedding_size, bias_regularizer=tf.keras.regularizers.l2(0.01))(x)
+        out = Dense(self.embedding_size, activity_regularizer=tf.keras.regularizers.l2())(x)
         conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
-        if self.num_layers is not None:
-            for layer in base_model.layers[:self.num_layers]:
-                layer.trainable = False
-            for layer in base_model.layers[self.num_layers:]:
-                layer.trainable = True
+        num_trainable_layers = min(self.num_layers, conv_model.layers.__len__()) - 1
+        num_nontrainable_layers = conv_model.layers.__len__() - num_trainable_layers
+        for i in range(conv_model.layers.__len__()):
+            if i < num_nontrainable_layers:
+                conv_model.layers[i].trainable = False
+            else:
+                conv_model.layers[i].trainable = True
 
+        print('Found {} trainable and {} non_trainable layers'.format(num_trainable_layers, num_nontrainable_layers))
         return conv_model, preprocess
 
     def get_optimizer(self, name, lr=0.001):

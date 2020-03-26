@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 @tf.function
 def triplet_loss(anchor=None,
                  positive=None,
@@ -22,6 +23,7 @@ def triplet_loss(anchor=None,
     neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
 
     return neg_dist, pos_dist
+
 
 @tf.function
 def lossless_triplet_loss(anchor=None,
@@ -57,5 +59,3 @@ def lossless_triplet_loss(anchor=None,
     neg_dist = -tf.math.log(-tf.divide((n - neg_dist), beta) + 1 + epsilon)
 
     return neg_dist, pos_dist
-
-

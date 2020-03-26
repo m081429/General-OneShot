@@ -90,6 +90,7 @@ def format_example(image_name=None, img_size=256):
     image = tf.cast(image, tf.float32)
     image = tf.image.per_image_standardization(image)
     image = tf.image.resize(image, (img_size, img_size))
+    image = tf.cast(image, tf.float32) / 255.
 
     if train is True:
         image = tf.image.random_flip_left_right(image)

@@ -9,20 +9,22 @@ class TripletLossLayer(Layer):
         self.alpha = alpha
         self.neg_loss = None
         self.pos_loss = None
+        self.loss = None
         super(TripletLossLayer, self).__init__(**kwargs)
 
     def triplet_loss(self, inputs):
         anchor, positive, negative = inputs
         p_dist = tf.math.reduce_sum(tf.math.square(anchor - positive), axis=-1)
         n_dist = tf.math.reduce_sum(tf.math.square(anchor - negative), axis=-1)
-        self.neg_loss = n_dist
-        self.pos_loss = p_dist
-        return tf.math.reduce_sum(tf.math.maximum(p_dist - n_dist + self.alpha, 1e-8), axis=0)
+        self.neg_dist = tf.math.reduce_sum(n_dist)
+        self.pos_dist = tf.math.reduce_sum(p_dist)
+        return tf.math.reduce_sum(tf.math.maximum(p_dist - n_dist + self.alpha, 0), axis=0)
 
     def call(self, inputs):
         loss = self.triplet_loss(inputs)
         self.add_loss(loss)
-        return tf.dtypes.cast(loss, tf.float32), self.neg_loss, self.pos_loss
+        self.loss = loss
+        return self.loss, self.neg_dist, self.pos_dist
 
 
 class LosslessTripletLossLayer(Layer):
@@ -33,6 +35,7 @@ class LosslessTripletLossLayer(Layer):
         self.pos_loss = None
         self.epsilon = 1e-8
         self.n = 1
+        self.beta = 1
         super(LosslessTripletLossLayer, self).__init__(**kwargs)
 
     def triplet_loss(self, inputs):
@@ -48,7 +51,7 @@ class LosslessTripletLossLayer(Layer):
         self.pos_loss = -tf.math.log(-tf.divide(pos_dist, self.beta) + 1 + self.epsilon)
         self.neg_loss = -tf.math.log(-tf.divide((self.n - neg_dist), self.beta) + 1 + self.epsilon)
         # compute loss
-        loss = self.neg_loss[0]  + self.pos_loss[0]
+        loss = self.neg_loss[0] + self.pos_loss[0]
         return loss
 
     def call(self, inputs):
@@ -58,14 +61,14 @@ class LosslessTripletLossLayer(Layer):
 
 
 def build_triplet_model(patch_size, network, margin=0.2, num_channels=3):
-    '''
+    """
     Define the Keras Model for training
         Input :
             input_shape : shape of input images
             network : Neural network to train outputing embeddings
             margin : minimal distance between Anchor-Positive and Anchor-Negative for the lossfunction (alpha)
 
-    '''
+    """
 
     input_shape = (-1, patch_size, patch_size, num_channels)
     # Define the tensors for the three input images
