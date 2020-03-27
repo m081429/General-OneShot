@@ -3,7 +3,8 @@ from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D,
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.backend import l2_normalize
-from layers import LosslessTripletLossLayer, TripletLossLayer
+from layers import LosslessTripletLossLayer
+
 
 def custom(input_shape, embeddingsize):
     # Convolutional Neural Network
@@ -27,6 +28,7 @@ def custom(input_shape, embeddingsize):
     # Force the encoding to live on the d-dimentional hypershpere
     network.add(Lambda(lambda x: l2_normalize(x, axis=-1)))
     return network
+
 
 class GetModel:
 
@@ -120,28 +122,27 @@ class GetModel:
 
         # Add a global average pooling and change the output size to our number of embedding nodes
         if self.model_name != 'custom':
-               x = model.output
-               x = Flatten()(x)
-               out = Dense(self.embedding_size, activity_regularizer=tf.keras.regularizers.l2())(x)
-               conv_model = Model(inputs=input_tensor, outputs=out)
-               # Now check to see if we are retraining all but the head, or deeper down the stack
-               num_trainable_layers = min(self.num_layers, conv_model.layers.__len__()) - 1
-               num_nontrainable_layers = conv_model.layers.__len__() - num_trainable_layers
-               for i in range(
-                       conv_model.layers.__len__() - 4):  # Making sure I have at least the last few training always
-                   if i < num_nontrainable_layers:
-                       conv_model.layers[i].trainable = False
-                   else:
-                       conv_model.layers[i].trainable = True
+            x = model.output
+            x = Flatten()(x)
+            out = Dense(self.embedding_size, activity_regularizer=tf.keras.regularizers.l2())(x)
+            conv_model = Model(inputs=input_tensor, outputs=out)
+            # Now check to see if we are retraining all but the head, or deeper down the stack
+            num_trainable_layers = min(self.num_layers, conv_model.layers.__len__()) - 1
+            num_nontrainable_layers = conv_model.layers.__len__() - num_trainable_layers
+            for i in range(
+                    conv_model.layers.__len__() - 4):  # Making sure I have at least the last few training always
+                if i < num_nontrainable_layers:
+                    conv_model.layers[i].trainable = False
+                else:
+                    conv_model.layers[i].trainable = True
 
-               print('Found {} trainable and {} non_trainable layers'.format(num_trainable_layers + 4,
-                                                                             num_nontrainable_layers))
+            print('Found {} trainable and {} non_trainable layers'.format(num_trainable_layers + 4,
+                                                                          num_nontrainable_layers))
         else:
             conv_model = model
-        #if retrain is True:
+        # if retrain is True:
         #    x = tf.keras.layers.Dropout(rate=0.2)(x)
         return conv_model, preprocess
-
 
     def get_optimizer(self, name, lr=0.001):
         if name == 'Adadelta':
@@ -169,7 +170,7 @@ class GetModel:
         return self.model
 
 
-def build_triplet_model(patch_size, model, loss_style='TripletLossLayer', margin=0.2, color_channels=3):
+def build_triplet_model(patch_size, model, margin=0.2, color_channels=3):
     input_shape = (patch_size, patch_size, color_channels)
 
     anchor_input = Input(input_shape, name="anchor_input")
@@ -181,11 +182,7 @@ def build_triplet_model(patch_size, model, loss_style='TripletLossLayer', margin
     encoded_p = model(positive_input)
     encoded_n = model(negative_input)
 
-    # TripletLoss Layer
-    if loss_style == 'TripletLossLayer':
-        loss_layer = TripletLossLayer(alpha=margin, name='triplet_loss_layer')([encoded_a, encoded_p, encoded_n])
-    else:
-        loss_layer = LosslessTripletLossLayer(alpha=margin, name='triplet_loss_layer')([encoded_a, encoded_p, encoded_n])
+    loss_layer = LosslessTripletLossLayer(alpha=margin, name='triplet_loss_layer')([encoded_a, encoded_p, encoded_n])
 
     # Connect the inputs with the outputs
     network_train = Model(inputs=[anchor_input, positive_input, negative_input], outputs=loss_layer)

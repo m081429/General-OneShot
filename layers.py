@@ -1,36 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer
-
-
-class TripletLossLayer(Layer):
-    def __init__(self, alpha, **kwargs):
-        self.alpha = alpha
-        self.neg_loss = None
-        self.pos_loss = None
-        self.neg_hist = None
-        self.pos_hist = None
-        self.loss = None
-        self.embedding_size = 128
-        super(TripletLossLayer, self).__init__(**kwargs)
-
-    def triplet_loss(self, inputs):
-        anchor, positive, negative = inputs
-        p_dist = tf.math.reduce_sum(tf.math.square(anchor - positive), axis=-1)
-        n_dist = tf.math.reduce_sum(tf.math.square(anchor - negative), axis=-1)
-        self.neg_dist = tf.math.reduce_sum(n_dist)
-        self.pos_dist = tf.math.reduce_sum(p_dist)
-        self.neg_hist = n_dist
-        self.pos_hist = p_dist
-        res = tf.math.reduce_sum(tf.math.maximum(p_dist - n_dist + self.alpha, 0), axis=0)
-        return res
-
-    def call(self, inputs):
-        loss = self.triplet_loss(inputs)
-        self.add_loss(loss)
-        self.loss = loss
-        return self.loss, self.neg_dist, self.pos_dist, self.neg_hist, self.pos_hist
 
 
 class LosslessTripletLossLayer(Layer):

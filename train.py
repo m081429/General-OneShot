@@ -13,6 +13,7 @@ from steps import write_tb
 import numpy as np
 
 import re
+
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
     exit()
@@ -38,7 +39,7 @@ parser.add_argument("-m", "--model-name",
                     dest='model_name',
                     default='custom',
                     choices=['custom',
-                            'DenseNet121',
+                             'DenseNet121',
                              'DenseNet169',
                              'DenseNet201',
                              'InceptionResNetV2',
@@ -74,7 +75,7 @@ parser.add_argument("-p", "--patch_size",
 parser.add_argument("-c", "--embedding_size",
                     dest='embedding_size',
                     help="How large should the embedding dimension be",
-                    default=2, type=int)
+                    default=128, type=int)
 
 parser.add_argument("-l", "--log_dir",
                     dest='log_dir',
@@ -89,12 +90,12 @@ parser.add_argument("-L", "--nb_layers",
 parser.add_argument("-r", "--learning-rate",
                     dest='lr',
                     help="Learning rate",
-                    default=0.0001, type=float)
+                    default=0.01, type=float)
 
 parser.add_argument("-e", "--num-epochs",
                     dest='num_epochs',
                     help="Number of epochs to use for training",
-                    default=10, type=int)
+                    default=5, type=int)
 
 parser.add_argument("-b", "--batch-size",
                     dest='BATCH_SIZE',
@@ -189,7 +190,8 @@ if args.image_dir_validation:
         v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
         v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
         v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
-        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img(v_image_ds, v_label_ds)
+        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img(v_image_ds,
+                                                                                                            v_label_ds)
     else:
         v_path_ds = tf.data.TFRecordDataset(validation_data.files)
         v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
@@ -219,7 +221,8 @@ else:
 # ####################################################################
 # Temporary cleaning function
 # ####################################################################
-out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.nb_layers))
+out_dir = os.path.join(args.log_dir,
+                       args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.nb_layers))
 checkpoint_name = 'training_checkpoints'
 
 overwrite = True
@@ -241,7 +244,6 @@ if overwrite is True:
             print('Removing: {}'.format(os.path.join(root, file)))
             os.remove(os.path.join(root, file))
 
-
 ###############################################################################
 # Define callbacks
 ###############################################################################
@@ -249,18 +251,18 @@ cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
-
 ###############################################################################
 # Build model
 ###############################################################################
 
-m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size, num_layers=args.nb_layers)
+m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size,
+             num_layers=args.nb_layers)
 logger.debug('Model constructed')
 model = m.build_model()
 logger.debug('Model built')
 
 # Combine triplet Model
-siamese_net = build_triplet_model(args.patch_size, model, loss_style='LosslessTripleLoss', margin=0.2)
+siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
 optimizer = m.get_optimizer(args.optimizer)
 
 checkpoint_prefix = os.path.join(out_dir, checkpoint_name)
@@ -284,23 +286,13 @@ siamese_net.summary()
 correct = 0
 results = []
 sliding_window_size = 50
-prev_step = 1   # Adding this variable so that tensorboard doesn't revert to step 1, at epoch 2
+prev_step = 1  # Adding this variable so that tensorboard doesn't revert to step 1, at epoch 2
 for epoch in range(1, args.num_epochs + 1):
-    metadata_file = os.path.join(out_dir, 'metadata.tsv')
-    if os.path.exists(metadata_file):
-        os.remove(metadata_file)
-    f = open(metadata_file, 'a')
     # Iterate over the batches of the dataset.
     for step, data in enumerate(train_ds):
         step += prev_step
         img_data, labels = data
         anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-
-        # write example metadata for embedding visualization
-        if step < 1000:
-            label = ['anchor', 'pos', 'neg']
-            for i in range(0, 3):
-                f.write("Step_{}_{}\t{}\n".format(step, label[i], data[1].numpy()[0][i]))
 
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
@@ -313,7 +305,9 @@ for epoch in range(1, args.num_epochs + 1):
         # Run one step of gradient descent by updating the value of the variables to minimize the loss.
         optimizer.apply_gradients(zip(grads, siamese_net.trainable_weights))
 
-        # Maintain tracking of re
+        # Maintain tracking of results
+        pos_dist = pos_dist[0]
+        neg_dist = neg_dist[0]
         if neg_dist > pos_dist:
             results.append(1)
         else:
@@ -324,8 +318,7 @@ for epoch in range(1, args.num_epochs + 1):
         correct = sum(results)
         percent_correct = sum(results) / len(results) * 100
         values, counts = np.unique(results, return_counts=True)
-        pos_dist = pos_dist[0]
-        neg_dist = neg_dist[0]
+
         print('\rEpoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'
               'Values:{}\tCounts:{}\t'.format(
             epoch,

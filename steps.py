@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 def write_tb(writer, step, neg_dist, pos_dist, total_dist, percent_correct, siamese_net, neg_hist, pos_hist):
     with writer.as_default():
         tf.summary.scalar('neg_dist', neg_dist, step=step)
@@ -11,4 +12,3 @@ def write_tb(writer, step, neg_dist, pos_dist, total_dist, percent_correct, siam
         for i in siamese_net.layers[3].layers:
             for j in i.trainable_variables:
                 tf.summary.histogram(j.name, j, step=step)
-

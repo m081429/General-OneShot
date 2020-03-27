@@ -176,7 +176,6 @@ def create_triplets_oneshot(t_image_ds):
             tmp_p_idx_img = random.choices(unique_labels_index[tmp_p_idx], k=1)[0]
             tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
             # extracting actual images with selected indexes for each class 'a','p' & 'n'
-            #list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
             list_img_label.append([tmp_a_idx, tmp_p_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label
 
