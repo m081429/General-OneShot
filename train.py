@@ -10,7 +10,7 @@ from preprocess import Preprocess, format_example, format_example_tf, update_sta
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from steps import write_tb
-import tensorflow_addons as tfa
+import numpy as np
 
 import re
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -83,7 +83,7 @@ parser.add_argument("-l", "--log_dir",
 
 parser.add_argument("-L", "--nb_layers",
                     dest='nb_layers',
-                    default=5, type=int,
+                    default=99, type=int,
                     help="Maximum number of layers to train in the model")
 
 parser.add_argument("-r", "--learning-rate",
@@ -219,7 +219,7 @@ else:
 # ####################################################################
 # Temporary cleaning function
 # ####################################################################
-out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr))
+out_dir = os.path.join(args.log_dir, args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.nb_layers))
 checkpoint_name = 'training_checkpoints'
 
 overwrite = True
@@ -260,7 +260,7 @@ model = m.build_model()
 logger.debug('Model built')
 
 # Combine triplet Model
-siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
+siamese_net = build_triplet_model(args.patch_size, model, loss_style='LosslessTripleLoss', margin=0.2)
 optimizer = m.get_optimizer(args.optimizer)
 
 checkpoint_prefix = os.path.join(out_dir, checkpoint_name)
@@ -275,7 +275,8 @@ try:
     logger.debug('Model image saved')
 except ImportError:
     print('No pydot available.  Skipping printing')
-    siamese_net.summary()
+
+siamese_net.summary()
 
 ###############################################################################
 # Run the training
@@ -303,7 +304,7 @@ for epoch in range(1, args.num_epochs + 1):
 
         # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
         with tf.GradientTape() as tape:
-            loss, neg_loss, pos_loss = siamese_net([anchor_img, pos_img, neg_img])
+            loss, neg_dist, pos_dist, neg_hist, pos_hist = siamese_net([anchor_img, pos_img, neg_img])
 
         # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
         # to the loss.
@@ -313,7 +314,7 @@ for epoch in range(1, args.num_epochs + 1):
         optimizer.apply_gradients(zip(grads, siamese_net.trainable_weights))
 
         # Maintain tracking of re
-        if neg_loss < pos_loss:
+        if neg_dist > pos_dist:
             results.append(1)
         else:
             results.append(0)
@@ -321,24 +322,26 @@ for epoch in range(1, args.num_epochs + 1):
         if step > 50:
             results = results[-sliding_window_size:]
         correct = sum(results)
-        try:
-            percent_correct = sum(results) / len(results) * 100
-        except ZeroDivisionError:
-            percent_correct = 0
-        print('\rEpoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'.format(
-                                                                                                epoch,
-                                                                                                step,
-                                                                                                correct,
-                                                                                                percent_correct,
-                                                                                                neg_loss,
-                                                                                                pos_loss,
-                                                                                                loss
-                                                                                               ),
+        percent_correct = sum(results) / len(results) * 100
+        values, counts = np.unique(results, return_counts=True)
+        pos_dist = pos_dist[0]
+        neg_dist = neg_dist[0]
+        print('\rEpoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'
+              'Values:{}\tCounts:{}\t'.format(
+            epoch,
+            step,
+            correct,
+            percent_correct,
+            neg_dist,
+            pos_dist,
+            loss,
+            values,
+            counts
+        ), end='')
 
-              end='')
         if step % args.log_freq == 0 and step > 0:
             checkpoint.step.assign(step)
-            write_tb(writer, step, neg_loss, pos_loss, loss, percent_correct)
+            write_tb(writer, step, neg_dist, pos_dist, loss, percent_correct, siamese_net, neg_hist, pos_hist)
             manager.save()
             siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
     print('')  # Create a newline
