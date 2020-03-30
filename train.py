@@ -15,8 +15,8 @@ from sklearn import metrics
 import re
 from sklearn.metrics import roc_curve,roc_auc_score
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-#if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
-#    exit()
+if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
+    exit()
 
 tf.config.set_soft_device_placement(True)
 # tf.debugging.set_log_device_placement(True)
@@ -127,6 +127,7 @@ parser.add_argument("--tfrecord_label",
 parser.add_argument('-f', "--log_freq",
                     dest="log_freq",
                     default=100,
+
                     help="Set the logging frequency for saving Tensorboard updates", type=int)
 
 parser.add_argument('-a', "--accuracy_num_batch",
@@ -333,8 +334,9 @@ for epoch in range(1, args.num_epochs + 1):
         percent_correct = sum(results) / len(results) * 100
         values, counts = np.unique(results, return_counts=True)
 
-        print('Epoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'
-              'Values:{}\tCounts:{}\n'.format(
+
+        print('\rEpoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'
+              'Values:{}\tCounts:{}\t'.format(
             epoch,
             step,
             correct,
@@ -348,6 +350,7 @@ for epoch in range(1, args.num_epochs + 1):
 
         if step % args.log_freq == 0 and step > 0:
             checkpoint.step.assign(step)
+
             manager.save()
             siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
             #training accuracy and threshold
