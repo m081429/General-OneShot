@@ -4,7 +4,7 @@ from tensorflow.keras import Model, Sequential
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.backend import l2_normalize
 from layers import LosslessTripletLossLayer
-
+tf.keras.backend.clear_session()
 
 def custom(input_shape, embeddingsize):
     # Convolutional Neural Network
@@ -21,6 +21,9 @@ def custom(input_shape, embeddingsize):
     network.add(Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_uniform',
                        kernel_regularizer=l2(2e-4)))
     network.add(Flatten())
+    network.add(Dense(4096, activation='relu',
+                      kernel_regularizer=l2(1e-3),
+                      kernel_initializer='he_uniform'))
     network.add(Dense(embeddingsize, activation=None,
                       kernel_regularizer=l2(1e-3),
                       kernel_initializer='he_uniform'))
@@ -29,6 +32,8 @@ def custom(input_shape, embeddingsize):
     network.add(Lambda(lambda x: l2_normalize(x, axis=-1)))
     return network
 
+    # Force the encoding to live on the d-dimentional hypershpere
+    network.add(Lambda(lambda x: K.l2_normalize(x, axis=-1)))
 
 class GetModel:
 
@@ -124,6 +129,7 @@ class GetModel:
         if self.model_name != 'custom':
             x = model.output
             x = Flatten()(x)
+            #x = Dense(4096, activation='relu', activity_regularizer=tf.keras.regularizers.l2(1e-3),kernel_initializer='he_uniform')(x)
             out = Dense(self.embedding_size, activity_regularizer=tf.keras.regularizers.l2())(x)
             conv_model = Model(inputs=input_tensor, outputs=out)
             # Now check to see if we are retraining all but the head, or deeper down the stack

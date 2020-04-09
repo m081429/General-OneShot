@@ -14,14 +14,19 @@
 #--use-multiprocessing True --filetype tfrecords --tfrecord_label 'phenotype/subtype' --tfrecord_image 'image/encoded'
 # --train_num_layers 0 
 #exit
-python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/General-OneShot/train.py  \
--t /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/train  \
--v /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/val \
--m ResNet50 \
+#python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/General-OneShot/train.py  \
+python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/tmp/General-OneShot/train.py \
+-m custom -c 128 \
 -o RMSprop \
 -p 256 \
--l /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/triplet_lossless_tfrecord_img \
--r 0.001 \
--e 1 -b 32  -V DEBUG --filetype images
+-t /projects/shart/digital_pathology/data/dogs_vs_cats/train \
+-v /projects/shart/digital_pathology/data/dogs_vs_cats/val \
+-l /projects/shart/digital_pathology/data/dogs_vs_cats/log  \
+-r 0.0001 \
+-e 10 -b 4 -V DEBUG --filetype images -f 50 -a 20
+# /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/train
+#/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/val
+#/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/triplet_lossless_tfrecord_img
+# -f 50 -a 20
 #--use-multiprocessing True --filetype images
 #-L BinaryCrossentropy

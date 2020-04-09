@@ -86,11 +86,10 @@ def format_example(image_name=None, img_size=256):
     global status
     train = status
     image = tf.io.read_file(image_name)
-    image = tf.io.decode_jpeg(image)
-    image = tf.cast(image, tf.float32)
-    image = tf.image.per_image_standardization(image)
+    image = tf.io.decode_jpeg(image, channels=3)
+    image = tf.cast(image, tf.float32)/255
+    #image = tf.image.per_image_standardization(image)
     image = tf.image.resize(image, (img_size, img_size))
-    image = tf.cast(image, tf.float32) / 255.
 
     if train is True:
         image = tf.image.random_flip_left_right(image)
@@ -98,7 +97,8 @@ def format_example(image_name=None, img_size=256):
         image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
         image = tf.image.random_flip_up_down(image)
         image = tf.image.random_hue(image, max_delta=0.2)
-    image = tf.reshape(image, (img_size, img_size, 3))
+
+    #image = tf.reshape(image, (img_size, img_size, 3))
 
     return image
 
@@ -132,7 +132,7 @@ def format_example_tf(tfrecord_proto, img_size=256):
         image = tf.image.random_flip_up_down(image)
         image = tf.image.random_hue(image, max_delta=0.2)
 
-    image = tf.reshape(image, (img_size, img_size, 3))
+    #image = tf.reshape(image, (img_size, img_size, 3))
     return image, label
 
 
