@@ -102,6 +102,36 @@ parser.add_argument("-V", "--verbose",
                     help="Set the logging level")
 
 
+parser.add_argument("-F", "--filetype",
+                    dest="filetype",
+                    choices=['tfrecords', 'images'],
+                    default="images",
+                    help="Set the logging level")
+
+parser.add_argument("-D", "--drop_out",
+                    dest="reg_drop_out_per",
+                    default=None,type=float,
+                    help="Regulrization drop out percent 0-1")
+
+parser.add_argument("--tfrecord_image",
+                    dest="tfrecord_image",
+                    default="image/encoded",
+                    help="Set the logging level")
+
+parser.add_argument("--tfrecord_label",
+                    dest="tfrecord_label",
+                    default="null",
+                    help="Set the logging level")
+
+parser.add_argument("--train_num_layers",
+                    dest="train_num_layers",
+                    default=False,
+                    help="Set the logging level")
+
+parser.add_argument("--prev_checkpoint",
+                    dest="prev_checkpoint",
+                    default=False,
+                    help="Set the logging level")
 
 args = parser.parse_args()
 
@@ -131,20 +161,7 @@ ds_t = tf.data.Dataset.from_generator(train_ds.get_distributed_datasets, output_
         "pos_img": tf.float32,
         "neg_img": tf.float32
     }, tf.int64),
-    output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3]))
-
-#num_img=0    
-#for image, label in ds_t:
-    #print("Image shape: ", image["pos_img"].numpy().shape)
-    #print("Image shape: ", image["anchor"].numpy().shape)
-    #print("Image shape: ", image["neg_img"].numpy().shape)
-    #print("Label: ", label.numpy().shape)
-    #print("Label: ", label.numpy())
-    #num_img=num_img+1
-#print(num_img)    
-#sys.exit(0)
-
-ds_t=ds_t.batch(args.BATCH_SIZE).repeat()
+    output_shapes=({"anchor": [args.patch_size,args.patch_size,3],"pos_img": [args.patch_size,args.patch_size,3],"neg_img": [args.patch_size,args.patch_size,3]},[3])).batch(args.BATCH_SIZE).repeat()
 
 
 
@@ -170,13 +187,11 @@ if args.image_dir_validation:
 else:
     ds_v = None
     validation_steps = None
-#num_img=0
-#for image, label in ds_t.take(1):
+
+#for image, label in ds_v.take(1):
     #print("Image shape: ", image.numpy().shape)
     #print("Image shape: ", image["anchor"].numpy().shape)
     #print("Label: ", label.numpy().shape)
-    #num_img=num_img+1
-#print(num_img)
 #sys.exit(0)
 # I now have generators for training and validation
 

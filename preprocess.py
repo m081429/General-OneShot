@@ -1,148 +1,95 @@
+from random import shuffle, choice
 import os
 import logging
-import tensorflow as tf
-import random
-import glob
+import sys
 logger = logging.getLogger(__name__)
 
+class Preprocess:
 
-def get_doublets_and_labels(directory_path, label_dict=None, suffix='jpg'):
-    list_ds = glob.glob(directory_path +"/*/*"+suffix)
-    anchors = list()
-    others = list()
-    labels = list()
-    for img_path in list_ds:
-        class_name = get_class_name(img_path)
-        positive, p_classname, negative, n_classname = get_another_of_each_class(img_path, list_ds)
-        anchors.append(img_path)
-        others.append(positive)
-        try:
-            labels.append(int(p_classname))
-        except ValueError:
-            labels.append(int(label_dict[p_classname]))
-        anchors.append(img_path)
-        others.append(negative)
-        try:
-            labels.append(int(n_classname))
-        except ValueError:
-            labels.append(int(label_dict[n_classname]))
+    def __init__(self, directory_path):
+        """
+        Return a randomized list of each directory's contents
 
-    return anchors, others, labels
+        :param directory_path: a directory that contains sub-folders of images
 
-def is_same_class(file_path, class_name):
-    if get_class_name(file_path) == class_name:
-        return True
-    else:
-        return False
+        :returns class_files: a dict of each file in each folder
+        """
+        logger.debug('Initializing Preprocess')
+        super().__init__()
+        self.directory_path = directory_path
+        self.class_files = self.__get_list()
+        self.min_images = self.__count_min_number_of_images()
+        self.set_list = self.__group_into_triples()
 
+    def __get_list(self):
+        logging.debug('Getting initial list of images')
+        class_files = dict()
+        classes = os.listdir(self.directory_path)
 
-def get_class_name(file_path):
-    return os.path.basename(os.path.dirname(file_path))
+        for x in classes:
+            class_files[x] = []
+            for y in os.listdir(os.path.join(self.directory_path, x)):
+                class_files[x].append(os.path.join(self.directory_path, x, y))
 
-def get_another_of_each_class(file_path, list_ds):
-    """
-    Find examples of classes from the same and different groups
+            i = class_files[x]
+            shuffle(i)
+            class_files[x] = i
+        return class_files
 
-    Args:
-        file_path: complete path to target image, assuming it is in a directory that is the classname
-        list_ds: list of all possible filepaths to search
+    def __count_min_number_of_images(self):
+        logger.debug('Counting the number of images')
+        min_images = None
+        for k, v in self.class_files.items():
+            if min_images is None or min_images < len(v):
+                min_images = len(v)
+        return min_images
 
-    Returns:
-        positive: Name of file path for image with the same class
-        p_classname: Class name of the positive match
-        negative: Name of file path for image with the different class
-        n_classname: Class name of the negative match
+    def __count_number_of_groups(self):
+        return self.class_files.items().__len__()
 
-    """
-    positive, p_classname = file_path, None
-    negative, n_classname = file_path, None
-    # Get positive class example
-    while positive == file_path:
-        example = random.choices(list_ds)[0]
-        example_class_name = get_class_name(example)
-        if is_same_class(file_path, example_class_name):
-            positive = example
-            p_classname = example_class_name
-    # Get negative class example
-    while negative == file_path:
-        example = random.choices(list_ds)[0]
-        example_class_name = get_class_name(example)
-        if not is_same_class(file_path, example_class_name):
-            negative = example
-            n_classname = example_class_name
-    return positive, p_classname, negative, n_classname
+    def __get_indexes(self):
+        """
+        Construct a list of three indexes for anchor, pos, neg
+        """
+        n_groups = self.__count_number_of_groups()
+        # Choose an anchor/positive index
+        a_idx = choice(range(n_groups))
+        p_idx = a_idx
 
+        # Choose a negative sample
+        n_idx = p_idx
+        while n_idx == p_idx:
+            n_idx = choice(range(n_groups))
+        return a_idx, p_idx, n_idx
 
-def preprocess(input_array, label, img_size=256, img_source='img'):
+    def __get_dictname_from_indexes(self, a_idx, p_idx, n_idx):
+        idx_names = list(self.class_files.keys())
+        return idx_names[a_idx], idx_names[p_idx], idx_names[n_idx]
 
-    if img_source == 'img':
-        anchor_img = format_example(image_name=input_array['anchor'], img_size=img_size)
-        other_img = format_example(image_name=input_array['other'], img_size=img_size)
-        label = tf.reshape(label, (1,1))
-        return (anchor_img, other_img), label
+    def __group_into_triples(self):
+        """ Convert sorted individual lists into triples
+        """
+        logger.debug('Grouping into triples')
+        set_list = []
+        for i in range(self.min_images):
+            try:
+                a_idx, p_idx, n_idx = self.__get_indexes()
+                a_idx, p_idx, n_idx = self.__get_dictname_from_indexes(a_idx, p_idx, n_idx)
 
-    else:
-        format_example = format_example_tf
-        exit(1)
-
-
-
-
-# processing images
-def format_example(image_name=None, img_size=256, train=True):
-    """
-    Apply any image preprocessing here
-    :param image_name: the specific filename of the image
-    :param img_size: size that images should be reshaped to
-    :return: image
-    """
-
-    image = tf.io.read_file(image_name)
-    image = tf.io.decode_jpeg(image)
-    image = tf.cast(image, tf.float32)
-    image = tf.image.per_image_standardization(image)
-    image = tf.image.resize(image, (img_size, img_size))
-    image = tf.cast(image, tf.float32) / 255.
-
-    if train is True:
-        image = tf.image.random_flip_left_right(image)
-        image = tf.image.random_brightness(image, max_delta=0.2)
-        image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
-        image = tf.image.random_flip_up_down(image)
-        image = tf.image.random_hue(image, max_delta=0.2)
-    image = tf.reshape(image, (img_size, img_size, 3))
-
-    return image
+                # Only pop from the anchor, otherwise random sample from others 
+                #modified by Naresh: min number of images index can be random , so need to add the other possibility if
+                if len(self.class_files[a_idx]) == self.min_images:
+                    a_img = self.class_files[a_idx][i]
+                    p_img = choice(self.class_files[p_idx])
+                    n_img = choice(self.class_files[n_idx])
+                else:
+                    n_img = self.class_files[n_idx][i]
+                    p_img = choice(self.class_files[p_idx])
+                    a_img = choice(self.class_files[a_idx])
+                l = (a_img, p_img, n_img)
+                set_list.append(l)
+            except IndexError:
+                pass  # this is for when you run out of samples
+        return set_list
 
 
-# extracting images and labels from tfrecords
-def format_example_tf(image_name=None, img_size=256):
-    # Parse the input tf.Example proto using the dictionary above.
-    # Create a dictionary describing the features.
-    global tf_image, tf_label, status
-    train = status
-    image_feature_description = {
-        tf_image: tf.io.FixedLenFeature((), tf.string, ""),
-        tf_label: tf.io.FixedLenFeature((), tf.int64, -1),
-    }
-    parsed_image_dataset = tf.io.parse_single_example(image_name, image_feature_description)
-    # image = parsed_image_dataset['image/encoded']
-    # label = parsed_image_dataset['phenotype/TP53_Mutations']
-    image = parsed_image_dataset[tf_image]
-    label = parsed_image_dataset[tf_label]
-    label = tf.dtypes.cast(label, tf.uint8)
-    # label = tf.one_hot(label, 2)
-    image = tf.io.decode_png(image, channels=3)
-    image = tf.cast(image, tf.float32)
-    image = tf.image.per_image_standardization(image)
-    image = tf.image.resize(image, (img_size, img_size))
-
-    if train is True:
-        image = tf.image.random_flip_left_right(image)
-        image = tf.image.random_brightness(image, max_delta=0.2)
-        image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
-        image = tf.image.random_flip_up_down(image)
-        image = tf.image.random_hue(image, max_delta=0.2)
-
-    image = tf.reshape(image, (img_size, img_size, 3))
-    return image, label

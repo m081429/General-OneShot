@@ -1,8 +1,9 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, GlobalAveragePooling2D, Flatten
+from tensorflow.keras.layers import Lambda, Input, Dense, GlobalAveragePooling2D, Flatten
 from tensorflow.keras import Model
-
-from losses import triplet_loss
+from tensorflow.keras.regularizers import l2
+from losses import TripletLossLayer
+from tensorflow.keras import backend as K
 #from losses import lossless_triplet_loss as triplet_loss 
 class GetModel:
 
@@ -93,7 +94,13 @@ class GetModel:
         base_model = model
         x = base_model.output
         x = Flatten()(x)
-        out = Dense(1, activation='sigmoid')(x)
+        #out = Dense(1, activation='sigmoid')(x)
+        
+        x = Dense(4096, activation='relu', kernel_regularizer=l2(1e-3), kernel_initializer='he_uniform')(x)
+        x = Dense(self.classes, activation=None, kernel_regularizer=l2(1e-3),kernel_initializer='he_uniform')(x)
+        #Force the encoding to live on the d-dimentional hypershpere
+        out = Lambda(lambda x: K.l2_normalize(x,axis=-1))(x)
+    
         conv_model = Model(inputs=input_tensor, outputs=out)
 
         # Now check to see if we are retraining all but the head, or deeper down the stack
@@ -127,6 +134,9 @@ class GetModel:
             raise AttributeError("{} not found in available optimizers".format(name))
 
         return optimizer
+        
+    def build_model(self):
+        return self.model
 
     def compile_model(self, optimizer, lr, img_size=256):
         conv_model = self.model
@@ -143,20 +153,25 @@ class GetModel:
         anchor_out = conv_model(anchor_in)
         pos_out = conv_model(pos_in)
         neg_out = conv_model(neg_in)
-
-        y_pred = tf.keras.layers.concatenate([anchor_out, pos_out, neg_out])
+        
+        #TripletLoss Layer
+        margin=0.2
+        inputs=[anchor_out,pos_out,neg_out]
+        #loss_layer = TripletLossLayer(margin,inputs)
+        loss_layer = TripletLossLayer(alpha=margin,name='triplet_loss_layer')([anchor_out,pos_out,neg_out])
+        model = Model(inputs=[anchor_in,pos_in,neg_in],outputs=loss_layer)
+        model.compile(loss=None,optimizer=self._get_optimizer(optimizer, lr=lr))
+        #y_pred = tf.keras.layers.concatenate([anchor_out, pos_out, neg_out])
 
         # Define the trainable model
-        model = Model(inputs=[{'anchor': anchor_in,
-                               'pos_img': pos_in,
-                               'neg_img': neg_in}], outputs=y_pred)
-        model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss, metrics=[
-                          #tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
-                          tf.keras.metrics.AUC( name='AUC'),
-                          tf.keras.metrics.AUC( curve='PR',name='PR'),
-                          tf.keras.metrics.Accuracy(name='accuracy'),
-                          tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
-                          tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')
-                      ])
+        #model = Model(inputs=[{'anchor': anchor_in,'pos_img': pos_in,'neg_img': neg_in}], outputs=y_pred)
+        # model.compile(optimizer=self._get_optimizer(optimizer, lr=lr), loss=triplet_loss, metrics=[
+                          # #tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
+                          # tf.keras.metrics.AUC( name='AUC'),
+                          # tf.keras.metrics.AUC( curve='PR',name='PR'),
+                          # tf.keras.metrics.Accuracy(name='accuracy'),
+                          # tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
+                          # tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')
+                      # ])
 
         return model
