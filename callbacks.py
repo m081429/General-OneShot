@@ -20,7 +20,7 @@ class CallBacks:
 
     def _getCP(self):
         return tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(self.log_dir, 'cp-{epoch:04d}.ckpt'), verbose=1,
-                                                  save_weights_only=True, save_frequency=1)
+                                                  save_weights_only=True, save_frequency=1,monitor='mse',mode='auto')
 
     # Uncomment this when fixed in TF                 load_weights_on_restart=True)
 

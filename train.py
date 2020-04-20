@@ -5,7 +5,7 @@ import os
 import sys
 import tensorflow as tf
 from callbacks import CallBacks
-from model_factory import GetModel, build_triplet_model
+#from model_factory import GetModel, build_triplet_model
 from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
@@ -15,6 +15,20 @@ from sklearn import metrics
 import re
 from sklearn.metrics import roc_curve,roc_auc_score
 from PIL import Image, ImageDraw
+
+from model_factory import GetModel
+from tensorflow.keras import models
+from PIL import Image, ImageDraw
+
+#os.environ['CUDA_VISIBLE_DEVICES']="2,3"
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
+    exit()
+for g in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(g, True)
+
+tf.config.set_soft_device_placement(True)
+
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 #if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
 #    exit()
@@ -173,14 +187,12 @@ logger.debug('Completed Data runner')
 train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
                                           output_types=({
                                                             "anchor_img": tf.float32,
-                                                            "pos_img": tf.float32,
-                                                            "neg_img": tf.float32
+                                                            "other_img": tf.float32,
                                                         }, tf.int64),
                                           output_shapes=({
                                                              "anchor_img": [args.patch_size, args.patch_size, 3],
-                                                             "pos_img": [args.patch_size, args.patch_size, 3],
-                                                             "neg_img": [args.patch_size, args.patch_size, 3]
-                                                         }, [3]))
+                                                             "other_img": [args.patch_size, args.patch_size, 3],
+                                                         }, ()))
 
 # num_img=0
 # for image, label in train_ds:
@@ -188,25 +200,27 @@ train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
 #         npa=image["anchor_img"].numpy()
 #         im = Image.fromarray(np.uint8(npa*255))
 #         im.save(str(num_img) + '_anchor.png', "png")
-#         npa = image["pos_img"].numpy()
+#         npa = image["other_img"].numpy()
 #         im = Image.fromarray(np.uint8(npa * 255))
-#         im.save(str(num_img) + '_pos.png', "png")
-#         npa = image["neg_img"].numpy()
-#         im = Image.fromarray(np.uint8(npa * 255))
-#         im.save(str(num_img) + '_neg.png', "png")
-#         # print("Image shape: ", image["pos_img"].numpy().shape)
-#         # print("Image shape: ", image["anchor"].numpy().shape)
-#         # print("Image shape: ", image["neg_img"].numpy().shape)
-#         # print("Label: ", label.numpy().shape)
-#         # print("Label: ", label.numpy())
-#     num_img=num_img+1
+#         im.save(str(num_img) + '_other.png', "png")
+#         print("Image shape: ", image["anchor_img"].numpy().shape)
+#         print("Image shape: ", image["other_img"].numpy().shape)
+#         print("Label: ", label.numpy().shape)
+#         print("Label: ", label.numpy())
+#         num_img=num_img+1
 # print(num_img)
 # sys.exit(0)
 train_data_num=0
 for img_data, labels in train_ds:
     train_data_num=train_data_num+1
-train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE)
 training_steps = int(train_data_num / args.BATCH_SIZE)
+#train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
+#train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
+#train_ds = train_ds.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
+#train_ds =train_ds.batch(args.BATCH_SIZE, drop_remainder=True)
+#print(train_data_num,args.BATCH_SIZE,training_steps)
+#sys.exit(0)
 logger.debug('Completed Training dataset')
 
 if args.image_dir_validation:
@@ -231,28 +245,50 @@ if args.image_dir_validation:
     validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets,
                                                    output_types=({
                                                                      "anchor_img": tf.float32,
-                                                                     "pos_img": tf.float32,
-                                                                     "neg_img": tf.float32
+                                                                     "other_img": tf.float32,
                                                                  }, tf.int64),
                                                    output_shapes=({
                                                                       "anchor_img": [args.patch_size, args.patch_size,
                                                                                      3],
-                                                                      "pos_img": [args.patch_size, args.patch_size, 3],
-                                                                      "neg_img": [args.patch_size, args.patch_size, 3]},
-                                                                  [3]))
+                                                                      "other_img": [args.patch_size, args.patch_size,
+                                                                                    3],
+                                                                  }, ()))
     #validation_ds = validation_ds.batch(args.BATCH_SIZE)
     #validation_steps = int(validation_data.min_images / args.BATCH_SIZE)
     #
-    
+    # num_img = 0
+    # for image, label in validation_ds:
+    #     if num_img < 10:
+    #         npa = image["anchor_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_anchor.png', "png")
+    #         npa = image["other_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_other.png', "png")
+    #         print("Image shape: ", image["anchor_img"].numpy().shape)
+    #         print("Image shape: ", image["other_img"].numpy().shape)
+    #         print("Label: ", label.numpy().shape)
+    #         print("Label: ", label.numpy())
+    #         num_img = num_img + 1
+    # print(num_img)
+    # sys.exit(0)
     validation_data_num=0
     for img_data, labels in validation_ds:
         validation_data_num=validation_data_num+1
-    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE)
     validation_steps = int(validation_data_num / args.BATCH_SIZE)
+    #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
+    #validation_ds =validation_ds.batch(args.BATCH_SIZE, drop_remainder=True)
+    #validation_data_num = validation_ds.shuffle(buffer_size=validation_data_num).repeat()
+    #validation_data_num = validation_data_num.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
+
     logger.debug('Completed Validation dataset')
+    #sys.exit(0)
 else:
     validation_ds = None
     validation_steps = None
+
+
 
 # ####################################################################
 # Temporary cleaning function
@@ -261,9 +297,41 @@ out_dir = os.path.join(args.log_dir,
                        args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.nb_layers))
 checkpoint_name = 'training_checkpoints'
 
-training_flag=1
-if training_flag == 1:
 
+
+
+###############################################################################
+# Define callbacks
+###############################################################################
+cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
+###############################################################################
+# Define callbacks
+###############################################################################
+# def scheduler(epoch):
+#     if epoch < 5:
+#         #return 0.01
+#         return 0.0006
+#     elif epoch < 10:
+#         #return 0.001
+#         return 0.0006
+#     else:
+#         #return 0.001 * tf.math.exp(0.1 * (10 - epoch))
+#         return 0.0006
+#
+# cb = [tf.keras.callbacks.TensorBoard(log_dir=out_dir, histogram_freq=1, write_graph=True, update_freq='epoch',write_images=False),
+#       tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(out_dir, 'cp-{epoch:04d}.ckpt'), monitor='mse', verbose=1,save_weights_only=True,save_frequency=1,
+#                                          mode='auto'),
+#         tf.keras.callbacks.EarlyStopping(monitor='loss', patience=30)]
+        #tf.keras.callbacks.LearningRateScheduler(scheduler)]
+
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+###############################################################################
+# Build model
+###############################################################################
+training_flag = 0
+if training_flag == 1:
     overwrite = True
     if overwrite is True:
         for root, dirs, files in os.walk(out_dir):
@@ -284,316 +352,78 @@ if training_flag == 1:
                 os.remove(os.path.join(root, file))
 
     ###############################################################################
-    # Define callbacks
-    ###############################################################################
-    cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-
-    ###############################################################################
     # Build model
     ###############################################################################
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size)
+        model = m.build_model()
+        model.summary()
+        optimizer = m.get_optimizer(args.optimizer, lr=args.lr)
+        model.compile(optimizer=optimizer,
+                      loss='binary_crossentropy',
+                      # metrics=['binary_accuracy', 'mse', tf.keras.metrics.AUC()]
+                      metrics=[tf.keras.metrics.MeanSquaredError(name='mse'),
+                               # tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
+                               tf.keras.metrics.AUC(name='AUC'),
+                               tf.keras.metrics.AUC(curve='PR', name='PR'),
+                               # tf.keras.metrics.Accuracy(name='accuracy'),
+                               # tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
+                               tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')])
 
-    m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size,
-                 num_layers=args.nb_layers)
-    logger.debug('Model constructed')
-    model = m.build_model()
-    logger.debug('Model built')
+    #if args.image_dir_validation is None:
+        #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb)
+    #else:
+        #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb, validation_data=validation_ds,steps_per_epoch=training_steps,)
+    model.fit(train_ds,
+              steps_per_epoch=training_steps,
+              epochs=args.num_epochs,
+              callbacks=cb.get_callbacks(),
+              validation_data=validation_ds,
+              validation_steps=validation_steps)
 
-    # Combine triplet Model
-    siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
-    optimizer = m.get_optimizer(args.optimizer)
-
-    checkpoint_prefix = os.path.join(out_dir, checkpoint_name)
-    writer = tf.summary.create_file_writer(out_dir)
-    checkpoint = tf.train.Checkpoint(model=siamese_net, optimizer=optimizer, step=tf.Variable(1))
-    manager = tf.train.CheckpointManager(checkpoint, out_dir, max_to_keep=3)
-    checkpoint.restore(manager.latest_checkpoint)  # Restore if necessary
-
-    try:
-        tf.keras.utils.plot_model(siamese_net, to_file=os.path.join(out_dir, 'model.png'), show_shapes=True,
-                                  show_layer_names=True)
-        logger.debug('Model image saved')
-    except ImportError:
-        print('No pydot available.  Skipping printing')
-
-    siamese_net.summary()
-
-    ###############################################################################
-    # Run the training
-    ##############################################################################
-    correct = 0
-    results = []
-    sliding_window_size = 50
-    prev_step = 1  # Adding this variable so that tensorboard doesn't revert to step 1, at epoch 2
-    for epoch in range(1, args.num_epochs + 1):
-        # Iterate over the batches of the dataset.
-        train_ds1 = train_ds.take(args.acc_num_batch)
-        validation_ds1 = validation_ds.take(args.acc_num_batch) 
-        for step, data in enumerate(train_ds):
-            step += prev_step
-            img_data, labels = data
-            anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-
-            # Open a GradientTape to record the operations run during the forward pass, which enables autodifferentiation.
-            with tf.GradientTape() as tape:
-                loss, neg_dist, pos_dist, neg_hist, pos_hist = siamese_net([anchor_img, pos_img, neg_img])
-                grads = tape.gradient(loss, siamese_net.trainable_variables)
-
-            # Use the gradient tape to automatically retrieve the gradients of the trainable variables with respect
-            # to the loss.
-            #grads = tape.gradient(loss, siamese_net.trainable_weights)
-
-
-            # Run one step of gradient descent by updating the value of the variables to minimize the loss.
-            optimizer.apply_gradients(zip(grads, siamese_net.trainable_variables))
-            # Maintain tracking of results
-            pos_dist = np.mean(pos_dist.numpy())
-            neg_dist = np.mean(neg_dist.numpy())
-            if neg_dist > pos_dist:
-                results.append(1)
-            else:
-                results.append(0)
-            # Trim results to last N samples
-            if step > 50:
-                results = results[-sliding_window_size:]
-            correct = sum(results)
-            percent_correct = sum(results) / len(results) * 100
-            values, counts = np.unique(results, return_counts=True)
-
-            print('Epoch:{}\tStep:{}\tCorrect: {} ({:0.1f}%)\tneg_dist:{:0.4f}\tpos_dist:{:0.4f}\tLoss:{:0.4f}\t'
-                  'Values:{}\tCounts:{}\n'.format(
-                epoch,
-                step,
-                correct,
-                percent_correct,
-                neg_dist,
-                pos_dist,
-                loss,
-                values,
-                counts
-            ), end='')
-
-            if step % args.log_freq == 0 and step > 0:
-                checkpoint.step.assign(step)
-                manager.save()
-                siamese_net.save_weights(os.path.join(out_dir, 'siamese_net'))
-                accuracy_flag=1
-                if accuracy_flag == 1:
-                    #training accuracy and threshold
-                    #loading weights from the latest check point
-                    m1 = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size, num_layers=args.nb_layers)
-                    logger.debug('Model constructed')
-                    model_ori = m1.build_model()
-                    logger.debug('Model built')
-                    model.load_weights(os.path.join(out_dir,"siamese_net"))
-                    # optimizer = m1.get_optimizer(args.optimizer)
-                    # checkpoint_ori = tf.train.Checkpoint(model=model_ori, optimizer=optimizer, step=tf.Variable(1))
-                    # manager_ori = tf.train.CheckpointManager(checkpoint_ori, out_dir, max_to_keep=3)
-                    # checkpoint_ori.restore(manager_ori.latest_checkpoint)
-                    # print(manager_ori.latest_checkpoint)
-                    #getting optimum threshold from training data
-                    #train_ds1 = train_ds.take(args.acc_num_batch)    
-                    prob=[]
-                    y=[]
-                    num=0
-                    #iterating thorugh each batch of the training dataset
-                    for img_data, labels in train_ds1:
-                        #print("train",img_data['anchor_img'].numpy().shape)
-                        num=num+1
-                        #getting embedding vector for three images 
-                        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-                        anchor_result = np.asarray(model_ori.predict([anchor_img]))
-                        pos_result = np.asarray(model_ori.predict([pos_img]))
-                        neg_result = np.asarray(model_ori.predict([neg_img]))
-                        #for each image in the batch calculate the distance
-                        for i in range(args.BATCH_SIZE):
-                            pos=np.sum(np.square(anchor_result[i]-pos_result[i]))
-                            neg=np.sum(np.square(anchor_result[i]-neg_result[i]))
-                            #add positive and negative distance to prob list
-                            prob.append(pos)
-                            prob.append(neg)
-                            y.append(1)
-                            y.append(0)
-                    #getting percentiles from prob distribution        
-                    perc_prob = [np.percentile(prob, i) for i in range(5,95,1)]
-                    #finding the best threshold from the percentiles    
-                    prob_aucs = [roc_auc_score(y,[ 1 if x >= perc_prob[i] else 0 for x in prob ]) for i in range(len(perc_prob))]
-                    #getting the index for best auc
-                    idx_opti= np.argmax(prob_aucs)
-                    #best threshold
-                    threshold=perc_prob[idx_opti]
-                    #calculating training accuracy
-                    opti_thres_pred=[ 1 if x >= threshold else 0 for x in prob ]
-                    training_acc = roc_auc_score(y, opti_thres_pred)
-                    #calculating validation accuracy
-                    #validation_ds1 = validation_ds.take(args.acc_num_batch)    
-                    prob=[]
-                    y=[]
-                    num=0
-                    for img_data, labels in validation_ds1:
-                        #print("Valid",img_data['anchor_img'].numpy().shape)
-                        num=num+1
-                        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-                        anchor_result = np.asarray(model_ori.predict([anchor_img]))
-                        pos_result = np.asarray(model_ori.predict([pos_img]))
-                        neg_result = np.asarray(model_ori.predict([neg_img]))
-                        for i in range(args.BATCH_SIZE):
-                            pos=np.sum(np.square(anchor_result[i]-pos_result[i]))
-                            neg=np.sum(np.square(anchor_result[i]-neg_result[i]))
-                            prob.append(pos)
-                            prob.append(neg)
-                            y.append(1)
-                            y.append(0)
-                    ##calculating validation accuracy from best threshold obtained from training data       
-                    opti_thres_pred=[ 1 if x >= threshold else 0 for x in prob ]
-                    testing_acc = roc_auc_score(y, opti_thres_pred)
-                    print(epoch,step,training_acc, testing_acc)
-                    #print(threshold,training_acc, testing_acc)
-                    write_tb(writer, step, neg_dist, pos_dist, loss, percent_correct, siamese_net, neg_hist, pos_hist, training_acc, testing_acc)
-                    #sys.exit(0)
-                else:
-                    write_tb(writer, step, neg_dist, pos_dist, loss, percent_correct, siamese_net, neg_hist, pos_hist)
-        print('')  # Create a newline
-        prev_step = step
-        manager.save()
-    manager.save()
+    #outfile_dir = os.path.join(out_dir, 'siamesenet')
+    # model.reset_metrics()
+    # model.save(outfile_dir, save_format='tf')
+    # os.makedirs(outfile_dir)
+    model.save(os.path.join(out_dir, 'my_model.h5'))
+    # model.save(outfile_dir, 'my_model.h5')
+    # print('Completed and saved {outfile_dir}')
 else:
-    m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size,
-                 num_layers=args.nb_layers)
-    logger.debug('Model constructed')
-    model = m.build_model()
-    logger.debug('Model built')
-    
-    latest = tf.train.latest_checkpoint(out_dir)
-    print(latest)
-    model.load_weights("/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/triplet_lossless_tfrecord_img/custom_RMSprop_0.01_99/siamese_net")
-    #sys.exit(0)
-    #model.load_weights(latest)
-    #sys.exit(0)
-    # Combine triplet Model
-    #siamese_net = build_triplet_model(args.patch_size, model, margin=0.2)
-    #latest = tf.train.latest_checkpoint(checkpoint_dir)
-    #print(latest)
-    
-    # optimizer = m.get_optimizer(args.optimizer)
-    # checkpoint = tf.train.Checkpoint(model=model, optimizer=optimizer, step=tf.Variable(1))
-    # manager = tf.train.CheckpointManager(checkpoint, out_dir, max_to_keep=3)
-    # checkpoint.restore(manager.latest_checkpoint)  # Restore if necessary
-    # print(manager.latest_checkpoint)
+    model = models.load_model(os.path.join(out_dir, 'my_model.h5'))
+    # imported = tf.saved_model.load(out_dir)
+    # infer = imported.signatures["serving_default"]
+    # print(list(imported.signatures.keys()))
     # sys.exit(0)
-    
-    #training accuracy and threshold
-    train_ds = train_ds.take(args.acc_num_batch)    
-    prob=[]
-    y=[]
-    num=0
+    # sys.exit(0)
+    # m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=128)
+    # logger.debug('Model constructed')
+    # model = m.build_model()
+    # logger.debug('Model built')
+
+    # model = m.compile_model(args.optimizer, args.lr, img_size=args.patch_size)
+    # logger.debug('Model compiled')
+    # latest = tf.train.latest_checkpoint(out_dir+'/'+variables)
+    # print(latest)
+    # sys.exit(0)
+    # model.load_weights(latest)
+
     for img_data, labels in train_ds:
-        num=num+1
-        #print(num)
-        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-        anchor_result = np.asarray(model.predict([anchor_img]))
-        pos_result = np.asarray(model.predict([pos_img]))
-        neg_result = np.asarray(model.predict([neg_img]))
-        for i in range(args.BATCH_SIZE):
-            pos=np.sum(np.square(anchor_result[i]-pos_result[i]))
-            neg=np.sum(np.square(anchor_result[i]-neg_result[i]))
-            prob.append(pos)
-            prob.append(neg)
-            y.append(1)
-            y.append(0)
-    perc_prob = [np.percentile(prob, i) for i in range(5,95,1)]        
-    prob_aucs = [roc_auc_score(y,[ 1 if x >= perc_prob[i] else 0 for x in prob ]) for i in range(len(perc_prob))]
-    print("train_min",np.min(prob))
-    print("train_25",np.percentile(prob,25))
-    print("train_50",np.percentile(prob,50))
-    print("train_75",np.percentile(prob,75))
-    print("train_max",np.max(prob))
-    print(len(perc_prob))
-    print(perc_prob)
-    print(prob_aucs)
-    idx_opti= np.argmax(prob_aucs)
-    threshold=perc_prob[idx_opti]
-    opti_thres_pred=[ 1 if x >= threshold else 0 for x in prob ]
-    training_acc = roc_auc_score(y, opti_thres_pred)
-    
-    validation_ds = validation_ds.take(args.acc_num_batch)    
-    prob=[]
-    y=[]
-    num=0
+        # img_data, labels = data
+        lab = labels.numpy().tolist()
+        # print(img_data[0].numpy().shape)
+        pos_img, neg_img = img_data["anchor_img"], img_data["other_img"]
+        result = np.asarray(model.predict([pos_img, neg_img])).tolist()
+        for i in range(len(lab)):
+            print("train", lab[i], result[i][0])
+    #sys.exit(0)
     for img_data, labels in validation_ds:
-        num=num+1
-        #print("val",num)
-        anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-        anchor_result = np.asarray(model.predict([anchor_img]))
-        pos_result = np.asarray(model.predict([pos_img]))
-        neg_result = np.asarray(model.predict([neg_img]))
-        for i in range(args.BATCH_SIZE):
-            pos=np.sum(np.square(anchor_result[i]-pos_result[i]))
-            neg=np.sum(np.square(anchor_result[i]-neg_result[i]))
-            prob.append(pos)
-            prob.append(neg)
-            y.append(1)
-            y.append(0)
-    print("test_min",np.min(prob))
-    print("test_25",np.percentile(prob,25))
-    print("test_50",np.percentile(prob,50))
-    print("test_75",np.percentile(prob,75))
-    print("test_max",np.max(prob))        
-    opti_thres_pred=[ 1 if x >= threshold else 0 for x in prob ]
-    testing_acc = roc_auc_score(y, opti_thres_pred)
-    print(threshold,training_acc, testing_acc)
-    
-    # num=0
-    # for img_data, labels in validation_ds:
-        # #img_data, labels = data
-        # #print(labels.numpy())
-        # num=num+1
-        # print("Val Step:",num)
-        # anchor_img, pos_img, neg_img = img_data['anchor_img'], img_data['pos_img'], img_data['neg_img']
-        
-        # anchor_result = np.asarray(model.predict([anchor_img]))
-        # pos_result = np.asarray(model.predict([pos_img]))
-        # neg_result = np.asarray(model.predict([neg_img]))
-        
-        # #k=np.sum(np.square(anchor_result-pos_result), axis=0)
-        # #print(k)
-        # prob=[]
-        # y=[]
-        # for i in range(args.BATCH_SIZE):
-            # pos=np.sum(np.square(anchor_result[i]-pos_result[i]))
-            # neg=np.sum(np.square(anchor_result[i]-neg_result[i]))
-            # prob.append(pos)
-            # prob.append(neg)
-            # y.append(1)
-            # y.append(0)
-        # #prob_aucs = [sk_auc(y, prob, x) for x in range(len(prob))]
-        # #def sk_auc(y, pred, i):
-            # #tmp= [ 1 if x >= pred[i] else 0 for x in pred ]
-            # #return roc_auc_score(y, tmp)
-        # prob_aucs = [roc_auc_score(y,[ 1 if x >= prob[i] else 0 for x in prob ]) for i in range(len(prob))]
-        # idx_opti= np.argmax(prob_aucs)
-        # opti_thres_pred=[ 1 if x >= prob[idx_opti] else 0 for x in prob ]
-        # tn, fp, fn, tp = metrics.confusion_matrix(y, opti_thres_pred).ravel()
-        # sensitivity = round(tp /(tp+fn),2)
-        # specificity = round(tn / (tn+fp),2)
-        # specificity = tn /(tn+fp)
-        #accuracy = (tp+tn)/(tn+fp+fn+tp)
-        # print(prob)
-        # print(y)
-        # print(idx_opti)
-        # print(prob_aucs[idx_opti])
-        # print(prob[idx_opti])
-        #print(num, sensitivity,specificity,prob_aucs[idx_opti],accuracy)
-        #sys.exit(0)
-        #, fpr, tpr, thresholds
-        #result = np.asarray(model.predict([anchor_img, pos_img, neg_img]))
-        #print(anchor_result.shape)
-        # result = np.asarray(model.predict([anchor_img, neg_img, pos_img]))
-        # print(result)
-        # result = np.asarray(model.predict([anchor_img, neg_img, neg_img]))
-        # print(result)
-        # result = np.asarray(model.predict([anchor_img, pos_img, pos_img]))
-        # print(result)
-        #sys.exit(0)
-        
+        # img_data, labels = data
+        lab = labels.numpy().tolist()
+        # print(img_data[0].numpy().shape)
+        pos_img, neg_img = img_data["anchor_img"], img_data["other_img"]
+        result = np.asarray(model.predict([pos_img, neg_img])).tolist()
+        for i in range(len(lab)):
+            print("valid", lab[i], result[i][0])
+
+

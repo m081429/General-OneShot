@@ -36,4 +36,12 @@ class DataRunner:
 
     def get_distributed_datasets(self):
         for i in self.image_file_list:
-            yield {"anchor_img": i[0], "pos_img": i[1], "neg_img": i[2]}, [1, 1, 0]
+            #v1=[]
+            #if i[2] == "0":
+                #ky = {"anchor_img": i[0], "other_img": i[1]}
+                #vl = [0,1]
+            #if i[2] == "1":
+                #ky = {"anchor_img": i[0], "other_img": i[1]}
+                #vl = [1, 0]
+            #yield {"anchor_img": i[0], "pos_img": i[1], "neg_img": i[2]}, [1, 1, 0]
+            yield {"anchor_img": i[0], "other_img": i[1]}, i[2]
