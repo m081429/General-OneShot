@@ -118,20 +118,22 @@ class GetModel:
             model.trainable = False
 
         x = model.output
-        if retrain is True:
-            x = tf.keras.layers.Dropout(rate=0.2)(x)
+        #if retrain is True:
+        x = tf.keras.layers.Dropout(rate=0.35)(x)
         x = Flatten()(x)
-        #out = Dense(self.embedding_size, kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
-        out = Dense(4096,activation='sigmoid', kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        out = Dense(self.embedding_size, kernel_regularizer=l2(2e-4), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        #out = Dense(4096,activation='sigmoid', kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
 
         conv_model = Model(inputs=model.input, outputs=out)
+
+        #return conv_model
 
         anchor_encoded = conv_model(anchor_input_tensor)
         other_encoded = conv_model(other_input_tensor)
         # Get L1 Distances
         L1_layer = Lambda(lambda tensors: abs(tensors[0] - tensors[1]))
         x = L1_layer([anchor_encoded, other_encoded])
-        prediction = Dense(1, activation='sigmoid',bias_initializer=b_init)(x)
+        prediction = Dense(2, activation='sigmoid',bias_initializer=b_init)(x)
         #prediction = Lambda(lambda x: tf.squeeze(x))(prediction)
         siamese_net = Model(inputs=[anchor_input_tensor, other_input_tensor], outputs=prediction)
 

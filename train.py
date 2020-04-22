@@ -15,7 +15,7 @@ from sklearn import metrics
 import re
 from sklearn.metrics import roc_curve,roc_auc_score
 from PIL import Image, ImageDraw
-
+from losses import triplet_loss as loss_fn
 from model_factory import GetModel
 from tensorflow.keras import models
 from PIL import Image, ImageDraw
@@ -168,7 +168,7 @@ logger.debug('Completed  training dataset Preprocess')
 AUTOTUNE = 1000
 
 # Update status to Training for map function in the preprocess
-update_status(False)
+update_status(True)
 
 # If input datatype is tfrecords or images
 if train_data.filetype != "tfrecords":
@@ -192,17 +192,17 @@ train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
                                           output_shapes=({
                                                              "anchor_img": [args.patch_size, args.patch_size, 3],
                                                              "other_img": [args.patch_size, args.patch_size, 3],
-                                                         }, ()))
+                                                         }, (2,)))
 
 # num_img=0
 # for image, label in train_ds:
 #     if num_img<10:
 #         npa=image["anchor_img"].numpy()
 #         im = Image.fromarray(np.uint8(npa*255))
-#         im.save(str(num_img) + '_anchor.png', "png")
+#         #im.save(str(num_img) + '_anchor.png', "png")
 #         npa = image["other_img"].numpy()
 #         im = Image.fromarray(np.uint8(npa * 255))
-#         im.save(str(num_img) + '_other.png', "png")
+#         #im.save(str(num_img) + '_other.png', "png")
 #         print("Image shape: ", image["anchor_img"].numpy().shape)
 #         print("Image shape: ", image["other_img"].numpy().shape)
 #         print("Label: ", label.numpy().shape)
@@ -215,7 +215,7 @@ for img_data, labels in train_ds:
     train_data_num=train_data_num+1
 training_steps = int(train_data_num / args.BATCH_SIZE)
 #train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
+train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
 #train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
 #train_ds = train_ds.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 #train_ds =train_ds.batch(args.BATCH_SIZE, drop_remainder=True)
@@ -252,7 +252,7 @@ if args.image_dir_validation:
                                                                                      3],
                                                                       "other_img": [args.patch_size, args.patch_size,
                                                                                     3],
-                                                                  }, ()))
+                                                                  }, (2,)))
     #validation_ds = validation_ds.batch(args.BATCH_SIZE)
     #validation_steps = int(validation_data.min_images / args.BATCH_SIZE)
     #
@@ -271,13 +271,15 @@ if args.image_dir_validation:
     #         print("Label: ", label.numpy())
     #         num_img = num_img + 1
     # print(num_img)
-    # sys.exit(0)
+
     validation_data_num=0
-    for img_data, labels in validation_ds:
+    for img_data, label in validation_ds:
+        #print("Label: ", label.numpy().shape)
+        #print("Label: ", label.numpy())
         validation_data_num=validation_data_num+1
     validation_steps = int(validation_data_num / args.BATCH_SIZE)
     #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
+    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_ds =validation_ds.batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_data_num = validation_ds.shuffle(buffer_size=validation_data_num).repeat()
     #validation_data_num = validation_data_num.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
@@ -327,10 +329,13 @@ cb = CallBacks(learning_rate=args.lr, log_dir=out_dir, optimizer=args.optimizer)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
+checkpoint_path = os.path.join(out_dir, "cp-{epoch:04d}.ckpt")
+checkpoint_dir = os.path.dirname(checkpoint_path)
+
 ###############################################################################
 # Build model
 ###############################################################################
-training_flag = 0
+training_flag = 1
 if training_flag == 1:
     overwrite = True
     if overwrite is True:
@@ -354,41 +359,75 @@ if training_flag == 1:
     ###############################################################################
     # Build model
     ###############################################################################
-    strategy = tf.distribute.MirroredStrategy()
-    with strategy.scope():
+    traditional = True
+    if traditional is True:
+        strategy = tf.distribute.MirroredStrategy()
+        with strategy.scope():
+            m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size)
+            model = m.build_model()
+            model.summary()
+            optimizer = m.get_optimizer(args.optimizer, lr=args.lr)
+            model.compile(optimizer=optimizer,
+                          loss='binary_crossentropy',
+                          metrics=[tf.keras.metrics.BinaryCrossentropy(name='bce'),
+                                   tf.keras.metrics.AUC(name='AUC'),
+                                   tf.keras.metrics.AUC(curve='PR', name='PR'),
+                                   tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')])
+            ## tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),# metrics=['binary_accuracy', 'mse', tf.keras.metrics.AUC()]
+            # tf.keras.metrics.Accuracy(name='accuracy'),
+            # tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
+            latest = tf.train.latest_checkpoint(checkpoint_dir)
+            if not latest:
+                model.save_weights(checkpoint_path.format(epoch=0))
+                latest = tf.train.latest_checkpoint(checkpoint_dir)
+            ini_epoch = int(re.findall(r'\b\d+\b', os.path.basename(latest))[0])
+            logger.debug('Loading initialized model')
+            model.load_weights(latest)
+            logger.debug('Loading weights from ' + latest)
+
+        logger.debug('Completed loading initialized model')
+
+        #if args.image_dir_validation is None:
+            #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb)
+        #else:
+            #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb, validation_data=validation_ds,steps_per_epoch=training_steps,)
+        model.fit(train_ds,epochs=args.num_epochs,callbacks=cb.get_callbacks(),validation_data=validation_ds,steps_per_epoch=training_steps,validation_steps=validation_steps)
+        #steps_per_epoch=training_steps,
+        #epochs=args.num_epochs,
+        #callbacks=cb.get_callbacks(),
+        #validation_data=validation_ds,
+        #validation_steps=validation_steps)
+
+        #outfile_dir = os.path.join(out_dir, 'siamesenet')
+        # model.reset_metrics()
+        # model.save(outfile_dir, save_format='tf')
+        # os.makedirs(outfile_dir)
+        model.save(os.path.join(out_dir, 'my_model.h5'))
+        # model.save(outfile_dir, 'my_model.h5')
+        # print('Completed and saved {outfile_dir}')
+    else:
+        #strategy = tf.distribute.MirroredStrategy()
+        #with strategy.scope():
         m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size)
+        logger.debug('Model constructed')
         model = m.build_model()
         model.summary()
+        logger.debug('Model built')
         optimizer = m.get_optimizer(args.optimizer, lr=args.lr)
-        model.compile(optimizer=optimizer,
-                      loss='binary_crossentropy',
-                      # metrics=['binary_accuracy', 'mse', tf.keras.metrics.AUC()]
-                      metrics=[tf.keras.metrics.MeanSquaredError(name='mse'),
-                               # tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),
-                               tf.keras.metrics.AUC(name='AUC'),
-                               tf.keras.metrics.AUC(curve='PR', name='PR'),
-                               # tf.keras.metrics.Accuracy(name='accuracy'),
-                               # tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
-                               tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')])
+        writer = tf.summary.create_file_writer(out_dir)
+        for epoc in range(1, args.num_epochs + 1):
+            for step, (x_batch_train, y_batch_train) in enumerate(train_ds):
+                step *= epoc
+                with tf.GradientTape() as tape:
+                    logits = model(x_batch_train, training=True)
+                    loss_value = loss_fn(y_batch_train, logits)
+                grads = tape.gradient(loss_value, model.trainable_weights)
+                optimizer.apply_gradients(zip(grads, model.trainable_weights))
+                if step % args.log_freq == 0:
+                    print(f'\rStep: {step}\tLoss: {loss_value[0]:04f}', end='')
+                    with writer.as_default():
+                        tf.summary.scalar('dist', loss_value[0], step=step)
 
-    #if args.image_dir_validation is None:
-        #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb)
-    #else:
-        #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb, validation_data=validation_ds,steps_per_epoch=training_steps,)
-    model.fit(train_ds,
-              steps_per_epoch=training_steps,
-              epochs=args.num_epochs,
-              callbacks=cb.get_callbacks(),
-              validation_data=validation_ds,
-              validation_steps=validation_steps)
-
-    #outfile_dir = os.path.join(out_dir, 'siamesenet')
-    # model.reset_metrics()
-    # model.save(outfile_dir, save_format='tf')
-    # os.makedirs(outfile_dir)
-    model.save(os.path.join(out_dir, 'my_model.h5'))
-    # model.save(outfile_dir, 'my_model.h5')
-    # print('Completed and saved {outfile_dir}')
 else:
     model = models.load_model(os.path.join(out_dir, 'my_model.h5'))
     # imported = tf.saved_model.load(out_dir)

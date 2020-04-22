@@ -87,8 +87,8 @@ def format_example(image_name=None, img_size=256):
     train = status
     image = tf.io.read_file(image_name)
     image = tf.io.decode_jpeg(image, channels=3)
-    image = tf.cast(image, tf.float32)/255
-    #image = tf.image.per_image_standardization(image)
+    #image = tf.cast(image, tf.float32)/255
+    image = tf.image.per_image_standardization(image)
     image = tf.image.resize(image, (img_size, img_size))
 
     if train is True:
@@ -155,7 +155,7 @@ def create_triplets_oneshot(t_image_ds):
         unique_labels_index.append(inx)
 
     # max number of images per label category
-    max_unique_labels_num = max(unique_labels_num)
+    max_unique_labels_num = max(unique_labels_num)*len(unique_labels)
 
     # randomly selecting images for a,p & n class
     list_img_index = []
@@ -178,9 +178,9 @@ def create_triplets_oneshot(t_image_ds):
             # extracting actual images with selected indexes for each class 'a','p' & 'n'
             #list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
             #list_img_label.append([tmp_a_idx, tmp_p_idx, tmp_n_idx])
-            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], 0.))
+            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], [0,1]))
             list_img_label.append([tmp_a_idx, tmp_p_idx])
-            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], 1.))
+            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], [1,0]))
             list_img_label.append([tmp_a_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label
 
@@ -216,7 +216,7 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
         unique_labels_index.append(inx)
 
     # max number of images per label category
-    max_unique_labels_num = max(unique_labels_num)
+    max_unique_labels_num = max(unique_labels_num)*len(unique_labels)
 
     # randomly selecting images for a,p & n class
     list_img_index = []
@@ -239,8 +239,8 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
             # extracting actual images with selected indexes for each class 'a','p' & 'n'
             #list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
             #list_img_label.append([tmp_a_idx, tmp_p_idx, tmp_n_idx])
-            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], "0"))
+            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], [0,1]))
             list_img_label.append([tmp_a_idx, tmp_p_idx])
-            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], "1"))
+            list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], [1,0]))
             list_img_label.append([tmp_a_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label

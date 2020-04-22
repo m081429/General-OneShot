@@ -15,15 +15,15 @@
 # --train_num_layers 0 
 #exit
 #python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/General-OneShot/train.py  \
-python /projects/shart/digital_pathology/scripts/General-OneShot/tmp/General-OneShot/train.py \
+python /projects/shart/digital_pathology/scripts/General-OneShot/train.py \
 -m ResNet50 -c 128 \
 -o Adam \
 -p 256 \
 -t /projects/shart/digital_pathology/data/dogs_vs_cats/train \
 -v /projects/shart/digital_pathology/data/dogs_vs_cats/val \
--l /projects/shart/digital_pathology/data/dogs_vs_cats/log2  \
--r 0.1 \
--e 100 -b 32 -V DEBUG --filetype images
+-l /projects/shart/digital_pathology/data/dogs_vs_cats/log4  \
+-r 0.001 \
+-e 60 -b 32 -V DEBUG --filetype images
 # /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/train
 #/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/val
 #/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/triplet_lossless_tfrecord_img
