@@ -6,7 +6,7 @@ import sys
 import tensorflow as tf
 from callbacks import CallBacks
 #from model_factory import GetModel, build_triplet_model
-from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot
+from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot,create_triplets_oneshot_img_v
 from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from steps import write_tb
@@ -175,7 +175,8 @@ if train_data.filetype != "tfrecords":
     t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
     t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
     t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
-    t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds)
+    #t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds, args.patch_size)
+    t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img_v(t_image_ds, t_label_ds)
 else:
     t_path_ds = tf.data.TFRecordDataset(train_data.files)
     t_image_ds = t_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
@@ -215,7 +216,7 @@ for img_data, labels in train_ds:
     train_data_num=train_data_num+1
 training_steps = int(train_data_num / args.BATCH_SIZE)
 #train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
 #train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
 #train_ds = train_ds.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 #train_ds =train_ds.batch(args.BATCH_SIZE, drop_remainder=True)
@@ -234,8 +235,7 @@ if args.image_dir_validation:
         v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
         v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
         v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
-        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img(v_image_ds,
-                                                                                                            v_label_ds)
+        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img_v(v_image_ds,v_label_ds)
     else:
         v_path_ds = tf.data.TFRecordDataset(validation_data.files)
         v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
@@ -279,7 +279,7 @@ if args.image_dir_validation:
         validation_data_num=validation_data_num+1
     validation_steps = int(validation_data_num / args.BATCH_SIZE)
     #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+    validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_ds =validation_ds.batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_data_num = validation_ds.shuffle(buffer_size=validation_data_num).repeat()
     #validation_data_num = validation_data_num.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
@@ -335,7 +335,7 @@ checkpoint_dir = os.path.dirname(checkpoint_path)
 ###############################################################################
 # Build model
 ###############################################################################
-training_flag = 1
+training_flag = 0
 if training_flag == 1:
     overwrite = True
     if overwrite is True:
@@ -454,7 +454,7 @@ else:
         pos_img, neg_img = img_data["anchor_img"], img_data["other_img"]
         result = np.asarray(model.predict([pos_img, neg_img])).tolist()
         for i in range(len(lab)):
-            print("train", lab[i], result[i][0])
+            print("train", lab[i][0], result[i][0])
     #sys.exit(0)
     for img_data, labels in validation_ds:
         # img_data, labels = data
@@ -463,6 +463,6 @@ else:
         pos_img, neg_img = img_data["anchor_img"], img_data["other_img"]
         result = np.asarray(model.predict([pos_img, neg_img])).tolist()
         for i in range(len(lab)):
-            print("valid", lab[i], result[i][0])
+            print("valid", lab[i][0], result[i][0])
 
 

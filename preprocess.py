@@ -2,10 +2,10 @@ import os
 import logging
 import tensorflow as tf
 import random
-
+from model_factory import get_emb_vec
 logger = logging.getLogger(__name__)
 global tf_image, tf_label, status
-
+import numpy as np
 
 class Preprocess:
 
@@ -184,14 +184,11 @@ def create_triplets_oneshot(t_image_ds):
             list_img_label.append([tmp_a_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label
 
-
-def create_triplets_oneshot_img(t_image_ds, t_label_ds):
+def create_triplets_oneshot_img_v(t_image_ds, t_label_ds):
     """
-
     Args:
         t_image_ds: image list
         t_label_ds: image class
-
     Returns:
             list_img_index: a set of images
             max_unique_labels_num: number of images that will be in a batch (so we dont over represent one class)
@@ -216,7 +213,7 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
         unique_labels_index.append(inx)
 
     # max number of images per label category
-    max_unique_labels_num = max(unique_labels_num)*len(unique_labels)
+    max_unique_labels_num = max(unique_labels_num)
 
     # randomly selecting images for a,p & n class
     list_img_index = []
@@ -243,4 +240,136 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds):
             list_img_label.append([tmp_a_idx, tmp_p_idx])
             list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], [1,0]))
             list_img_label.append([tmp_a_idx, tmp_n_idx])
+    return list_img_index, max_unique_labels_num, list_img_label
+
+def create_triplets_oneshot_img(t_image_ds, t_label_ds, patch_size):
+    """
+
+    Args:
+        t_image_ds: image list
+        t_label_ds: image class
+
+    Returns:
+            list_img_index: a set of images
+            max_unique_labels_num: number of images that will be in a batch (so we dont over represent one class)
+            list_img_label: a label for each of the three images in a triplet (e.g. [0, 0, 1])
+    """
+    #get model
+    patch_size = 224
+    img_size = 224
+    IMG_SHAPE = (patch_size, patch_size, 3)
+    IMG_SHAPE_NEW = (1,patch_size, patch_size, 3)
+    conv_model= get_emb_vec(IMG_SHAPE)
+    #model = conv_model.build_model()
+
+    list_images = []
+    list_labels = []
+    # adding images and labels to the list
+    for image in t_image_ds:
+        list_images.append(image)
+
+    for label in t_label_ds:
+        list_labels.append(label.numpy())
+    # unique labels
+    unique_labels = list(set(list_labels))
+    unique_labels_num = []
+    unique_labels_index = []
+    # creating array of indexes per label and number of images per label
+    for label in unique_labels:
+        inx = [x for x in range(0, len(list_labels)) if list_labels[x] == label]
+        unique_labels_num.append(len(inx))
+        unique_labels_index.append(inx)
+
+    # max number of images per label category
+    max_unique_labels_num = max(unique_labels_num)
+
+    batch_loss_dist = []
+    # iterating through all classes
+    for i in range(0, len(unique_labels)):
+        # iterating number of times equal to max image count of all category (doing this step , not to over represent
+        # the categories with more images)
+        for j in range(0, int(max_unique_labels_num/10)):
+            #print(i,j,max_unique_labels_num)
+            tmp_a_idx = i
+            tmp_p_idx = tmp_a_idx
+            tmp_unique_labels = list(range(0, len(unique_labels)))
+            tmp_unique_labels.remove(tmp_p_idx)
+            # selecting other category for 'n' class
+            tmp_n_idx = random.choices(tmp_unique_labels, k=1)[0]
+            # selecting image index for 'a','n' & 'p' category randonly
+            tmp_a_idx_img = random.choices(unique_labels_index[tmp_a_idx], k=1)[0]
+            tmp_p_idx_img = random.choices(unique_labels_index[tmp_p_idx], k=1)[0]
+            tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
+            # extracting actual images with selected indexes for each class 'a','p' & 'n'
+            A = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_a_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            P = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_p_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            N = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_n_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            studybatchloss = np.sum(np.square(A - P), axis=1) - np.sum(np.square(A - N), axis=1)
+            batch_loss_dist.append(studybatchloss[0])
+    batch_loss_dist_25=np.percentile(batch_loss_dist, 20)
+    batch_loss_dist_75 = np.percentile(batch_loss_dist, 85)
+    x=[i for i in batch_loss_dist if i < batch_loss_dist_25]
+    y = [i for i in batch_loss_dist if i > batch_loss_dist_75]
+    #print(len(batch_loss_dist),len(x),len(y))
+    print(batch_loss_dist_25,batch_loss_dist_75)
+    #exit(0)
+    #*len(unique_labels)
+    # randomly selecting images for a,p & n class
+    list_img_index = []
+    list_img_label = []
+
+    num_limit = int(max_unique_labels_num/3)
+    #batch_loss_dist = []
+    # iterating through all classes
+    for i in range(0, len(unique_labels)):
+        # iterating number of times equal to max image count of all category (doing this step , not to over represent
+        # the categories with more images)
+        num1 = 0
+        num2 = 0
+        num3 = 0
+        for j in range(0, max_unique_labels_num*10):
+            tmp_a_idx = i
+            tmp_p_idx = tmp_a_idx
+            tmp_unique_labels = list(range(0, len(unique_labels)))
+            tmp_unique_labels.remove(tmp_p_idx)
+            # selecting other category for 'n' class
+            tmp_n_idx = random.choices(tmp_unique_labels, k=1)[0]
+            # selecting image index for 'a','n' & 'p' category randonly
+            tmp_a_idx_img = random.choices(unique_labels_index[tmp_a_idx], k=1)[0]
+            tmp_p_idx_img = random.choices(unique_labels_index[tmp_p_idx], k=1)[0]
+            tmp_n_idx_img = random.choices(unique_labels_index[tmp_n_idx], k=1)[0]
+            # extracting actual images with selected indexes for each class 'a','p' & 'n'
+            #list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], list_images[tmp_n_idx_img]))
+            #list_img_label.append([tmp_a_idx, tmp_p_idx, tmp_n_idx])
+            A = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_a_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            P = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_p_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            N = conv_model.predict(tf.reshape(tf.image.resize(list_images[tmp_n_idx_img], (img_size, img_size)), IMG_SHAPE_NEW))
+            studybatchloss = np.sum(np.square(A - P), axis=1) - np.sum(np.square(A - N), axis=1)
+            #batch_loss_dist.append(studybatchloss[0])
+            k=0
+            if studybatchloss[0] <= batch_loss_dist_25 and num1<=num_limit:
+                k=1
+                num1 = num1+1
+            if studybatchloss[0] > batch_loss_dist_25 and studybatchloss[0] <= batch_loss_dist_75 and num2 <= num_limit:
+                k = 1
+                num2 = num2 + 1
+            if studybatchloss[0] > batch_loss_dist_75 and num3 <= num_limit:
+                k = 1
+                num3 = num3 + 1
+            #print(studybatchloss[0],batch_loss_dist_25,batch_loss_dist_75,num1,num2,num3)
+            if k==1:
+                list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_p_idx_img], [0,1]))
+                list_img_label.append([tmp_a_idx, tmp_p_idx])
+                list_img_index.append((list_images[tmp_a_idx_img], list_images[tmp_n_idx_img], [1,0]))
+                list_img_label.append([tmp_a_idx, tmp_n_idx])
+            if num1 == num_limit and num2 == num_limit and num3 == num_limit:
+                break
+        print("Success",i,num1,num2,num3)
+        #batch_loss_dist_25 = np.percentile(batch_loss_dist, 25)
+        #batch_loss_dist_75 = np.percentile(batch_loss_dist, 75)
+        #x = [i for i in batch_loss_dist if i < batch_loss_dist_25]
+        #y = [i for i in batch_loss_dist if i > batch_loss_dist_75]
+        #print(len(batch_loss_dist),len(x),len(y))
+        #print(batch_loss_dist_25, batch_loss_dist_75)
+        #exit(0)
     return list_img_index, max_unique_labels_num, list_img_label

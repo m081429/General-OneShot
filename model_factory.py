@@ -8,6 +8,36 @@ W_init = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.01)
 W_init_fc = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.2)
 b_init = tf.keras.initializers.TruncatedNormal(mean=0.05, stddev=0.01)
 
+def get_emb_vec(IMG_SHAPE):
+    IMG_SHAPE = (224,224,3)
+    input_shape = IMG_SHAPE
+
+    W_init = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.01)
+    W_init_fc = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.2)
+    b_init = tf.keras.initializers.TruncatedNormal(mean=0.05, stddev=0.01)
+    # model = Sequential()
+    # model.add(Conv2D(64, (10,10), activation='relu', input_shape=input_shape,
+    #                kernel_initializer=W_init, kernel_regularizer=l2(2e-4)))
+    # model.add(MaxPooling2D())
+    # model.add(Conv2D(128, (7,7), activation='relu',
+    #                  kernel_initializer=W_init,
+    #                  bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+    # model.add(MaxPooling2D())
+    # model.add(Conv2D(128, (4,4), activation='relu', kernel_initializer=W_init,
+    #                  bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+    # model.add(MaxPooling2D())
+    # model.add(Conv2D(256, (4,4), activation='relu', kernel_initializer=W_init,
+    #                  bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+    # model.trainable = True
+
+    model = tf.keras.applications.ResNet50(weights='imagenet', include_top=True, input_shape=IMG_SHAPE)
+    model.trainable = False
+    x = model.output
+    x = Flatten()(x)
+    out = Dense(128, kernel_regularizer=l2(2e-4), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+    conv_model = Model(inputs=model.input, outputs=out)
+    return conv_model
+
 def custom(IMG_SHAPE):
     input_shape = IMG_SHAPE
     # convnet = Sequential()
@@ -119,14 +149,13 @@ class GetModel:
 
         x = model.output
         #if retrain is True:
-        x = tf.keras.layers.Dropout(rate=0.35)(x)
+        x = tf.keras.layers.Dropout(rate=0.40)(x)
         x = Flatten()(x)
         out = Dense(self.embedding_size, kernel_regularizer=l2(2e-4), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
         #out = Dense(4096,activation='sigmoid', kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
 
         conv_model = Model(inputs=model.input, outputs=out)
 
-        #return conv_model
 
         anchor_encoded = conv_model(anchor_input_tensor)
         other_encoded = conv_model(other_input_tensor)
