@@ -15,15 +15,27 @@
 # --train_num_layers 0 
 #exit
 #python /projects/shart/digital_pathology/scripts/General-Oneshot-Clean/General-OneShot/train.py  \
+#python /projects/shart/digital_pathology/scripts/General-OneShot/train_test.py \
+#Level3 BRCA1
 python /projects/shart/digital_pathology/scripts/General-OneShot/train.py \
--m ResNet50 -c 128 \
--o Adam \
+-m ResNet152 -c 128 \
+-o RMSprop \
+-p 256 \
+-t /projects/shart/digital_pathology/data/TCGA_MAYO/FINAL_TF/tfrecord_brca1_level3_img/train \
+-v /projects/shart/digital_pathology/data/TCGA_MAYO/FINAL_TF/tfrecord_brca1_level3_img/val \
+-l /projects/shart/digital_pathology/data/TCGA_MAYO/FINAL_TF/tf2/BRCA1_Level3/One-shot  \
+-r 0.00001 \
+-e 40 -b 32 -V DEBUG --filetype images
+exit
+python /projects/shart/digital_pathology/scripts/General-OneShot/train.py \
+-m ResNet152 -c 128 \
+-o RMSprop \
 -p 256 \
 -t /projects/shart/digital_pathology/data/dogs_vs_cats/train \
 -v /projects/shart/digital_pathology/data/dogs_vs_cats/val \
--l /projects/shart/digital_pathology/data/dogs_vs_cats/log_hardsamp  \
--r 0.001 \
--e 60 -b 32 -V DEBUG --filetype images
+-l /projects/shart/digital_pathology/data/dogs_vs_cats/log_hardsamp_test  \
+-r 0.00001 \
+-e 40 -b 32 -V DEBUG --filetype images
 # /projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/train
 #/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/val
 #/projects/shart/digital_pathology/data/biliary_2020/annotations/images/Images_QC/sample_images/triplet_lossless_tfrecord_img

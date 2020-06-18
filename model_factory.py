@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, Lambda
+from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, Lambda, GlobalMaxPooling2D, GlobalAveragePooling2D, Dropout
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.backend import abs
@@ -30,10 +30,12 @@ def get_emb_vec(IMG_SHAPE):
     #                  bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
     # model.trainable = True
 
-    model = tf.keras.applications.ResNet50(weights='imagenet', include_top=True, input_shape=IMG_SHAPE)
+    model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False, input_shape=IMG_SHAPE)
     model.trainable = False
     x = model.output
+    x = GlobalAveragePooling2D(name='avg_pool')(x)
     x = Flatten()(x)
+    x = Dropout(0.3)(x)
     out = Dense(128, kernel_regularizer=l2(2e-4), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
     conv_model = Model(inputs=model.input, outputs=out)
     return conv_model
@@ -89,6 +91,7 @@ class GetModel:
         IMG_SHAPE = (self.img_size, self.img_size, 3)
         anchor_input_tensor = Input(shape=IMG_SHAPE, name='anchor_img')
         other_input_tensor = Input(shape=IMG_SHAPE, name='other_img')
+        input_tensor = Input(shape=IMG_SHAPE, name='anchor_img')
         if self.model_name == 'DenseNet121':
             model = tf.keras.applications.DenseNet121(weights=weights, include_top=include_top,
                                                       input_shape=IMG_SHAPE)
@@ -127,6 +130,9 @@ class GetModel:
         elif self.model_name == 'ResNet50':
             model = tf.keras.applications.ResNet50(weights=weights, include_top=include_top, input_shape=IMG_SHAPE)
 
+        elif self.model_name == 'ResNet152':
+            model = tf.keras.applications.ResNet152(weights=weights, include_top=include_top,input_shape=IMG_SHAPE)
+            
         elif self.model_name == 'VGG16':
             model = tf.keras.applications.VGG16(weights=weights, include_top=include_top,
                                                 input_shape=IMG_SHAPE)
@@ -143,19 +149,32 @@ class GetModel:
         else:
             raise AttributeError("{} not found in available models".format(self.model_name))
 
-        model.trainable = True
-        if self.model_name != 'custom':
-            model.trainable = False
-
+        #model.trainable = True
+        #if self.model_name != 'custom':
+            #model.trainable = False
+        for layer in model.layers:
+            layer.trainable = True
         x = model.output
         #if retrain is True:
-        x = tf.keras.layers.Dropout(rate=0.40)(x)
+        x = GlobalAveragePooling2D(name='avg_pool')(x)
+        
+        # x = BatchNormalization()(x)
+        # x = Dropout(0.35)(x)
+        # x = Dense(4096, activation='relu',kernel_regularizer=regularizers.l2(0.0002))(x)
+        # x = BatchNormalization()(x)
+        # x = Dropout(0.35)(x)
+        # x = Dense(4096, activation='relu',kernel_regularizer=regularizers.l2(0.0002))(x)
         x = Flatten()(x)
-        out = Dense(self.embedding_size, kernel_regularizer=l2(2e-4), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        
+        # x = Dense(4096,activation='sigmoid', kernel_regularizer=l2(0.0001), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        # x = Dropout(0.3)(x)
+        # x = Dense(4096,activation='sigmoid', kernel_regularizer=l2(0.0001), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        # x = Dropout(0.3)(x)
+        #, kernel_regularizer=l2(0.0002), kernel_initializer=W_init_fc, bias_initializer=b_init
+        out = Dense(self.embedding_size, activation='sigmoid')(x)
         #out = Dense(4096,activation='sigmoid', kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
-
+        #out = Dense(self.classes, kernel_regularizer=regularizers.l2(0.0001), activation='softmax')(x)
         conv_model = Model(inputs=model.input, outputs=out)
-
 
         anchor_encoded = conv_model(anchor_input_tensor)
         other_encoded = conv_model(other_input_tensor)
@@ -167,7 +186,7 @@ class GetModel:
         siamese_net = Model(inputs=[anchor_input_tensor, other_input_tensor], outputs=prediction)
 
         return siamese_net
-
+        
     def get_optimizer(self, name, lr=0.00006):
         if name == 'Adadelta':
             optimizer = tf.keras.optimizers.Adadelta(learning_rate=lr)

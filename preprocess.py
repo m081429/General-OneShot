@@ -84,20 +84,25 @@ def format_example(image_name=None, img_size=256):
     :return: image
     """
     global status
-    train = status
+    train = status 	
     image = tf.io.read_file(image_name)
     image = tf.io.decode_jpeg(image, channels=3)
-    #image = tf.cast(image, tf.float32)/255
-    image = tf.image.per_image_standardization(image)
+    image = tf.cast(image, tf.float32)#/255
+    image = (image/127.5) - 1
+    #image = tf.image.per_image_standardization(image)
     image = tf.image.resize(image, (img_size, img_size))
-
+    
     if train is True:
         image = tf.image.random_flip_left_right(image)
-        image = tf.image.random_brightness(image, max_delta=0.2)
-        image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
+        #image = tf.image.random_brightness(image, 0.4)
+        #image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
         image = tf.image.random_flip_up_down(image)
-        image = tf.image.random_hue(image, max_delta=0.2)
-
+        #image = tf.image.random_hue(image, max_delta=0.2)
+        image = tf.image.random_hue(image, 0.08)
+        image = tf.image.random_saturation(image, 0.6, 1.6)
+        image = tf.image.random_brightness(image, 0.05)
+        image = tf.image.random_contrast(image, 0.7, 1.3)
+        #image = tf.image.rot90(image, tf.random_uniform(shape=[], minval=0, maxval=4, dtype=tf.int32))
     image = tf.reshape(image, (img_size, img_size, 3))
 
     return image
@@ -242,7 +247,7 @@ def create_triplets_oneshot_img_v(t_image_ds, t_label_ds):
             list_img_label.append([tmp_a_idx, tmp_n_idx])
     return list_img_index, max_unique_labels_num, list_img_label
 
-def create_triplets_oneshot_img(t_image_ds, t_label_ds, patch_size):
+def create_triplets_oneshot_img(t_image_ds, t_label_ds):
     """
 
     Args:
@@ -364,7 +369,7 @@ def create_triplets_oneshot_img(t_image_ds, t_label_ds, patch_size):
                 list_img_label.append([tmp_a_idx, tmp_n_idx])
             if num1 == num_limit and num2 == num_limit and num3 == num_limit:
                 break
-        print("Success",i,num1,num2,num3)
+        #print("Success",i,num1,num2,num3)
         #batch_loss_dist_25 = np.percentile(batch_loss_dist, 25)
         #batch_loss_dist_75 = np.percentile(batch_loss_dist, 75)
         #x = [i for i in batch_loss_dist if i < batch_loss_dist_25]
