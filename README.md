@@ -30,7 +30,7 @@ python /projects/shart/digital_pathology/scripts/General-OneShot/train.py \
 ```
 ### Examples of training& validation images directory (assume you have two categories(like normal and cancer) in your data i.e 0 and 1)
 
-.
+```
 ├── train
 │   ├── 0
 │   │   ├── 1.jpg
@@ -44,3 +44,4 @@ python /projects/shart/digital_pathology/scripts/General-OneShot/train.py \
     └── 1
         ├── 1.jpg
         └── 2.jpg
+```
