@@ -159,16 +159,19 @@ class GetModel:
         x = GlobalAveragePooling2D(name='avg_pool')(x)
         
         # x = BatchNormalization()(x)
-        # x = Dropout(0.35)(x)
-        # x = Dense(4096, activation='relu',kernel_regularizer=regularizers.l2(0.0002))(x)
+        #x = Dropout(0.5)(x)
+        #x = Dense(1024, activation='relu',kernel_regularizer=regularizers.l2(0.001))(x)
         # x = BatchNormalization()(x)
-        # x = Dropout(0.35)(x)
-        # x = Dense(4096, activation='relu',kernel_regularizer=regularizers.l2(0.0002))(x)
+        #x = Dropout(0.5)(x)
+        #x = Dense(512, activation='relu',kernel_regularizer=regularizers.l2(0.001))(x)
         x = Flatten()(x)
         
         # x = Dense(4096,activation='sigmoid', kernel_regularizer=l2(0.0001), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
-        # x = Dropout(0.3)(x)
-        # x = Dense(4096,activation='sigmoid', kernel_regularizer=l2(0.0001), kernel_initializer=W_init_fc, bias_initializer=b_init)(x)
+        #x = Dropout(0.5)(x)
+        #x = Dense(1024, activation='relu', kernel_initializer='he_normal',kernel_regularizer=l2(0.001), bias_regularizer=l2(0.001))(x)
+        #x = Dropout(0.5)(x)
+        #x = Dense(512, activation='relu', kernel_initializer='he_normal',kernel_regularizer=l2(0.001), bias_regularizer=l2(0.001))(x)
+             
         # x = Dropout(0.3)(x)
         #, kernel_regularizer=l2(0.0002), kernel_initializer=W_init_fc, bias_initializer=b_init
         out = Dense(self.embedding_size, activation='sigmoid')(x)

@@ -22,10 +22,10 @@ from PIL import Image, ImageDraw
 
 #os.environ['CUDA_VISIBLE_DEVICES']="2,3"
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
-    exit()
-for g in tf.config.list_physical_devices('GPU'):
-    tf.config.experimental.set_memory_growth(g, True)
+#if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
+#    exit()
+#for g in tf.config.list_physical_devices('GPU'):
+#    tf.config.experimental.set_memory_growth(g, True)
 
 tf.config.set_soft_device_placement(True)
 
@@ -166,8 +166,8 @@ logger.setLevel(args.logLevel)
 train_data = Preprocess(args.image_dir_train, args.filetype, args.tfrecord_image, args.tfrecord_label)
 logger.debug('Completed  training dataset Preprocess')
 
-AUTOTUNE = 1000
-
+#AUTOTUNE = 1000
+AUTOTUNE = tf.data.experimental.AUTOTUNE
 # Update status to Training for map function in the preprocess
 update_status(True)
 
@@ -217,7 +217,7 @@ for img_data, labels in train_ds:
     train_data_num=train_data_num+1
 training_steps = int(train_data_num / args.BATCH_SIZE)
 #train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
+train_ds = train_ds.repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 
 
 #train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
@@ -399,7 +399,7 @@ if training_flag == 1:
             #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb)
         #else:
             #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb, validation_data=validation_ds,steps_per_epoch=training_steps,)
-        model.fit(train_ds,epochs=args.num_epochs,callbacks=cb.get_callbacks(),validation_data=validation_ds,steps_per_epoch=training_steps,validation_steps=validation_steps)
+        model.fit(train_ds,epochs=args.num_epochs,callbacks=cb.get_callbacks(),validation_data=validation_ds,steps_per_epoch=training_steps,validation_steps=validation_steps,workers=1,class_weight=None,max_queue_size=1000,use_multiprocessing=False,shuffle=False)
         #steps_per_epoch=training_steps,
         #epochs=args.num_epochs,
         #callbacks=cb.get_callbacks(),
