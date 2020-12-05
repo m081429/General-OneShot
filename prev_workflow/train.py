@@ -6,7 +6,8 @@ import sys
 import tensorflow as tf
 from callbacks import CallBacks
 #from model_factory import GetModel, build_triplet_model
-from preprocess import Preprocess, format_example, update_status
+from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot,create_triplets_oneshot_img_v
+from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from steps import write_tb
 import numpy as np
@@ -172,33 +173,28 @@ update_status(True)
 
 # If input datatype is tfrecords or images
 if train_data.filetype != "tfrecords":
-    t_path_ds1 = tf.data.Dataset.from_tensor_slices(train_data.files1)
-    t_image_ds1 = t_path_ds1.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    t_path_ds2 = tf.data.Dataset.from_tensor_slices(train_data.files2)
-    t_image_ds2 = t_path_ds2.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    t_label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(train_data.labels, tf.int64))
-    train_ds = tf.data.Dataset.zip(((t_image_ds1,t_image_ds2),t_label_ds)) 
-    # t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
-    # t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
-    # t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
-    # #t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds, args.patch_size)
-    # t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img_v(t_image_ds, t_label_ds)
+    t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
+    t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
+    t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
+    #t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds, args.patch_size)
+    t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img_v(t_image_ds, t_label_ds)
 else:
-    print("This workflow doesn't support TFRecords")
-    sys.exit(0)
+    t_path_ds = tf.data.TFRecordDataset(train_data.files)
+    t_image_ds = t_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
+    t_image_label_ds, train_data.min_images = create_triplets_oneshot(t_image_ds)
 
-# train_ds_dr = DataRunner(t_image_label_ds)
+train_ds_dr = DataRunner(t_image_label_ds)
 logger.debug('Completed Data runner')
 
-# train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
-                                          # output_types=({
-                                                            # "anchor_img": tf.float32,
-                                                            # "other_img": tf.float32,
-                                                        # }, tf.int64),
-                                          # output_shapes=({
-                                                             # "anchor_img": [args.patch_size, args.patch_size, 3],
-                                                             # "other_img": [args.patch_size, args.patch_size, 3],
-                                                         # }, (2,)))
+train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
+                                          output_types=({
+                                                            "anchor_img": tf.float32,
+                                                            "other_img": tf.float32,
+                                                        }, tf.int64),
+                                          output_shapes=({
+                                                             "anchor_img": [args.patch_size, args.patch_size, 3],
+                                                             "other_img": [args.patch_size, args.patch_size, 3],
+                                                         }, (2,)))
 
 # num_img=0
 # for image, label in train_ds:
@@ -216,19 +212,13 @@ logger.debug('Completed Data runner')
         # num_img=num_img+1
 # print(num_img)
 # sys.exit(0)
-train_data_num=train_data.num
-# for img_data1,img_data2, labels in train_ds:
-    # train_data_num=train_data_num+1
-# print(train_data_num)
-# sys.exit(0)
+train_data_num=0
+for img_data, labels in train_ds:
+    train_data_num=train_data_num+1
 training_steps = int(train_data_num / args.BATCH_SIZE)
 #train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
 train_ds = train_ds.repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
-# for image1,image2, label in train_ds:
-    # print(image1.shape)
-    # print(image2.shape)
-    # print(label.shape)
-    # sys.exit(0)
+
 
 #train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
 #train_ds = train_ds.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
@@ -241,20 +231,55 @@ if args.image_dir_validation:
     # Get Validation data
     # Update status to Testing for map function in the preprocess
     update_status(False)
-    
     validation_data = Preprocess(args.image_dir_validation, args.filetype, args.tfrecord_image, args.tfrecord_label)
-    v_path_ds1 = tf.data.Dataset.from_tensor_slices(validation_data.files1)
-    v_image_ds1 = v_path_ds1.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    v_path_ds2 = tf.data.Dataset.from_tensor_slices(validation_data.files2)
-    v_image_ds2 = v_path_ds2.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    v_label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(validation_data.labels, tf.int64))
-    validation_ds = tf.data.Dataset.zip(((v_image_ds1,v_image_ds2),v_label_ds)) 
-    
-    
     logger.debug('Completed test dataset Preprocess')
 
+    if validation_data.filetype != "tfrecords":
+        v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
+        v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
+        v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
+        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img_v(v_image_ds,v_label_ds)
+    else:
+        v_path_ds = tf.data.TFRecordDataset(validation_data.files)
+        v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
+        v_image_label_ds, validation_data.min_images = create_triplets_oneshot(v_image_ds)
+    v_ds_dr = DataRunner(v_image_label_ds)
+    logger.debug('Completed Data runner')
+    validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets,
+                                                   output_types=({
+                                                                     "anchor_img": tf.float32,
+                                                                     "other_img": tf.float32,
+                                                                 }, tf.int64),
+                                                   output_shapes=({
+                                                                      "anchor_img": [args.patch_size, args.patch_size,
+                                                                                     3],
+                                                                      "other_img": [args.patch_size, args.patch_size,
+                                                                                    3],
+                                                                  }, (2,)))
+    #validation_ds = validation_ds.batch(args.BATCH_SIZE)
+    #validation_steps = int(validation_data.min_images / args.BATCH_SIZE)
+    #
+    # num_img = 0
+    # for image, label in validation_ds:
+    #     if num_img < 10:
+    #         npa = image["anchor_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_anchor.png', "png")
+    #         npa = image["other_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_other.png', "png")
+    #         print("Image shape: ", image["anchor_img"].numpy().shape)
+    #         print("Image shape: ", image["other_img"].numpy().shape)
+    #         print("Label: ", label.numpy().shape)
+    #         print("Label: ", label.numpy())
+    #         num_img = num_img + 1
+    # print(num_img)
 
-    validation_data_num=validation_data.num
+    validation_data_num=0
+    for img_data, label in validation_ds:
+        #print("Label: ", label.numpy().shape)
+        #print("Label: ", label.numpy())
+        validation_data_num=validation_data_num+1
     validation_steps = int(validation_data_num / args.BATCH_SIZE)
     #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
@@ -271,11 +296,7 @@ else:
     validation_ds = None
     validation_steps = None
 
-# for image1,image2, label in validation_ds:
-    # print(image1.shape)
-    # print(image2.shape)
-    # print(label.shape)
-    # sys.exit(0)
+
 
 # ####################################################################
 # Temporary cleaning function

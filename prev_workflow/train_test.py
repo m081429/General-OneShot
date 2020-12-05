@@ -6,7 +6,8 @@ import sys
 import tensorflow as tf
 from callbacks import CallBacks
 #from model_factory import GetModel, build_triplet_model
-from preprocess import Preprocess, format_example, update_status
+from preprocess import Preprocess, format_example, format_example_tf, update_status, create_triplets_oneshot,create_triplets_oneshot_img_v
+from preprocess import create_triplets_oneshot_img
 from data_runner import DataRunner
 from steps import write_tb
 import numpy as np
@@ -18,13 +19,18 @@ from losses import triplet_loss as loss_fn
 from model_factory import GetModel
 from tensorflow.keras import models
 from PIL import Image, ImageDraw
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, Lambda
+from tensorflow.keras import Model, Sequential
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.backend import abs
 
 #os.environ['CUDA_VISIBLE_DEVICES']="2,3"
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-#if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
-#    exit()
-#for g in tf.config.list_physical_devices('GPU'):
-#    tf.config.experimental.set_memory_growth(g, True)
+if len(tf.config.experimental.list_physical_devices('GPU')) == 0:
+    exit()
+for g in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(g, True)
 
 tf.config.set_soft_device_placement(True)
 
@@ -63,7 +69,6 @@ parser.add_argument("-m", "--model-name",
                              'NASNetLarge',
                              'NASNetMobile',
                              'ResNet50',
-                             'ResNet152',
                              'VGG16',
                              'VGG19',
                              'Xception'],
@@ -165,71 +170,59 @@ logger.setLevel(args.logLevel)
 train_data = Preprocess(args.image_dir_train, args.filetype, args.tfrecord_image, args.tfrecord_label)
 logger.debug('Completed  training dataset Preprocess')
 
-#AUTOTUNE = 1000
-AUTOTUNE = tf.data.experimental.AUTOTUNE
+AUTOTUNE = 1000
+
 # Update status to Training for map function in the preprocess
 update_status(True)
 
 # If input datatype is tfrecords or images
 if train_data.filetype != "tfrecords":
-    t_path_ds1 = tf.data.Dataset.from_tensor_slices(train_data.files1)
-    t_image_ds1 = t_path_ds1.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    t_path_ds2 = tf.data.Dataset.from_tensor_slices(train_data.files2)
-    t_image_ds2 = t_path_ds2.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    t_label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(train_data.labels, tf.int64))
-    train_ds = tf.data.Dataset.zip(((t_image_ds1,t_image_ds2),t_label_ds)) 
-    # t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
-    # t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
-    # t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
-    # #t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds, args.patch_size)
-    # t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img_v(t_image_ds, t_label_ds)
+    t_path_ds = tf.data.Dataset.from_tensor_slices(train_data.files)
+    t_image_ds = t_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
+    t_label_ds = tf.data.Dataset.from_tensor_slices(train_data.labels)
+    #t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img(t_image_ds, t_label_ds, args.patch_size)
+    t_image_label_ds, train_data.min_images, train_image_labels = create_triplets_oneshot_img_v(t_image_ds, t_label_ds)
 else:
-    print("This workflow doesn't support TFRecords")
-    sys.exit(0)
+    t_path_ds = tf.data.TFRecordDataset(train_data.files)
+    t_image_ds = t_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
+    t_image_label_ds, train_data.min_images = create_triplets_oneshot(t_image_ds)
 
-# train_ds_dr = DataRunner(t_image_label_ds)
+train_ds_dr = DataRunner(t_image_label_ds)
 logger.debug('Completed Data runner')
 
-# train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
-                                          # output_types=({
-                                                            # "anchor_img": tf.float32,
-                                                            # "other_img": tf.float32,
-                                                        # }, tf.int64),
-                                          # output_shapes=({
-                                                             # "anchor_img": [args.patch_size, args.patch_size, 3],
-                                                             # "other_img": [args.patch_size, args.patch_size, 3],
-                                                         # }, (2,)))
+train_ds = tf.data.Dataset.from_generator(train_ds_dr.get_distributed_datasets,
+                                          output_types=({
+                                                            "anchor_img": tf.float32,
+                                                            "other_img": tf.float32,
+                                                        }, tf.int64),
+                                          output_shapes=({
+                                                             "anchor_img": [args.patch_size, args.patch_size, 3],
+                                                             "other_img": [args.patch_size, args.patch_size, 3],
+                                                         }, (2,)))
 
 # num_img=0
 # for image, label in train_ds:
-    # if num_img<3:
-        # npa=image["anchor_img"].numpy()
-        # im = Image.fromarray(np.uint8(npa*255))
-        # im.save(str(num_img) + '_anchor.png', "png")
-        # npa = image["other_img"].numpy()
-        # im = Image.fromarray(np.uint8(npa * 255))
-        # im.save(str(num_img) + '_other.png', "png")
-        # print("Image shape: ", image["anchor_img"].numpy().shape)
-        # print("Image shape: ", image["other_img"].numpy().shape)
-        # print("Label: ", label.numpy().shape)
-        # print("Label: ", label.numpy())
-        # num_img=num_img+1
+#     if num_img<10:
+#         npa=image["anchor_img"].numpy()
+#         im = Image.fromarray(np.uint8(npa*255))
+#         #im.save(str(num_img) + '_anchor.png', "png")
+#         npa = image["other_img"].numpy()
+#         im = Image.fromarray(np.uint8(npa * 255))
+#         #im.save(str(num_img) + '_other.png', "png")
+#         print("Image shape: ", image["anchor_img"].numpy().shape)
+#         print("Image shape: ", image["other_img"].numpy().shape)
+#         print("Label: ", label.numpy().shape)
+#         print("Label: ", label.numpy())
+#         num_img=num_img+1
 # print(num_img)
 # sys.exit(0)
-train_data_num=train_data.num
-# for img_data1,img_data2, labels in train_ds:
-    # train_data_num=train_data_num+1
-# print(train_data_num)
-# sys.exit(0)
+train_data_num=0
+for img_data, labels in train_ds:
+    train_data_num=train_data_num+1
 training_steps = int(train_data_num / args.BATCH_SIZE)
 #train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-train_ds = train_ds.repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
-# for image1,image2, label in train_ds:
-    # print(image1.shape)
-    # print(image2.shape)
-    # print(label.shape)
-    # sys.exit(0)
-
+#train_ds = train_ds.shuffle(train_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 #train_ds = train_ds.shuffle(buffer_size=train_data_num).repeat()
 #train_ds = train_ds.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
 #train_ds =train_ds.batch(args.BATCH_SIZE, drop_remainder=True)
@@ -241,26 +234,59 @@ if args.image_dir_validation:
     # Get Validation data
     # Update status to Testing for map function in the preprocess
     update_status(False)
-    
     validation_data = Preprocess(args.image_dir_validation, args.filetype, args.tfrecord_image, args.tfrecord_label)
-    v_path_ds1 = tf.data.Dataset.from_tensor_slices(validation_data.files1)
-    v_image_ds1 = v_path_ds1.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    v_path_ds2 = tf.data.Dataset.from_tensor_slices(validation_data.files2)
-    v_image_ds2 = v_path_ds2.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    v_label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(validation_data.labels, tf.int64))
-    validation_ds = tf.data.Dataset.zip(((v_image_ds1,v_image_ds2),v_label_ds)) 
-    
-    
     logger.debug('Completed test dataset Preprocess')
 
+    if validation_data.filetype != "tfrecords":
+        v_path_ds = tf.data.Dataset.from_tensor_slices(validation_data.files)
+        v_image_ds = v_path_ds.map(format_example, num_parallel_calls=AUTOTUNE)
+        v_label_ds = tf.data.Dataset.from_tensor_slices(validation_data.labels)
+        v_image_label_ds, validation_data.min_images, validation_image_labels = create_triplets_oneshot_img_v(v_image_ds,v_label_ds)
+    else:
+        v_path_ds = tf.data.TFRecordDataset(validation_data.files)
+        v_image_ds = v_path_ds.map(format_example_tf, num_parallel_calls=AUTOTUNE)
+        v_image_label_ds, validation_data.min_images = create_triplets_oneshot(v_image_ds)
+    v_ds_dr = DataRunner(v_image_label_ds)
+    logger.debug('Completed Data runner')
+    validation_ds = tf.data.Dataset.from_generator(v_ds_dr.get_distributed_datasets,
+                                                   output_types=({
+                                                                     "anchor_img": tf.float32,
+                                                                     "other_img": tf.float32,
+                                                                 }, tf.int64),
+                                                   output_shapes=({
+                                                                      "anchor_img": [args.patch_size, args.patch_size,
+                                                                                     3],
+                                                                      "other_img": [args.patch_size, args.patch_size,
+                                                                                    3],
+                                                                  }, (2,)))
+    #validation_ds = validation_ds.batch(args.BATCH_SIZE)
+    #validation_steps = int(validation_data.min_images / args.BATCH_SIZE)
+    #
+    # num_img = 0
+    # for image, label in validation_ds:
+    #     if num_img < 10:
+    #         npa = image["anchor_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_anchor.png', "png")
+    #         npa = image["other_img"].numpy()
+    #         im = Image.fromarray(np.uint8(npa * 255))
+    #         im.save(str(num_img) + '_other.png', "png")
+    #         print("Image shape: ", image["anchor_img"].numpy().shape)
+    #         print("Image shape: ", image["other_img"].numpy().shape)
+    #         print("Label: ", label.numpy().shape)
+    #         print("Label: ", label.numpy())
+    #         num_img = num_img + 1
+    # print(num_img)
 
-    validation_data_num=validation_data.num
+    validation_data_num=0
+    for img_data, label in validation_ds:
+        #print("Label: ", label.numpy().shape)
+        #print("Label: ", label.numpy())
+        validation_data_num=validation_data_num+1
     validation_steps = int(validation_data_num / args.BATCH_SIZE)
     #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
-    #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).batch(args.BATCH_SIZE, drop_remainder=True)
-    #validation_ds = validation_ds.shuffle(buffer_size=validation_data_num).repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
-    validation_ds = validation_ds.repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
-
+    #validation_ds = validation_ds.shuffle(validation_data_num, reshuffle_each_iteration=True).repeat().batch(args.BATCH_SIZE, drop_remainder=True)
+    validation_ds = validation_ds.shuffle(buffer_size=validation_data_num).repeat().batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
     #validation_ds =validation_ds.batch(args.BATCH_SIZE, drop_remainder=True)
     #validation_data_num = validation_ds.shuffle(buffer_size=validation_data_num).repeat()
     #validation_data_num = validation_data_num.batch(args.BATCH_SIZE).prefetch(buffer_size=AUTOTUNE)
@@ -271,17 +297,13 @@ else:
     validation_ds = None
     validation_steps = None
 
-# for image1,image2, label in validation_ds:
-    # print(image1.shape)
-    # print(image2.shape)
-    # print(label.shape)
-    # sys.exit(0)
+
 
 # ####################################################################
 # Temporary cleaning function
 # ####################################################################
 out_dir = os.path.join(args.log_dir,
-                       args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.embedding_size))
+                       args.model_name + '_' + args.optimizer + '_' + str(args.lr) + '_' + str(args.nb_layers))
 checkpoint_name = 'training_checkpoints'
 
 
@@ -322,58 +344,92 @@ checkpoint_dir = os.path.dirname(checkpoint_path)
 ###############################################################################
 training_flag = 1
 if training_flag == 1:
- 
+    overwrite = True
+    if overwrite is True:
+        for root, dirs, files in os.walk(out_dir):
+            for file in filter(lambda x: re.match(checkpoint_name, x), files):
+                print('Removing: {}'.format(os.path.join(root, file)))
+                os.remove(os.path.join(root, file))
+            for file in filter(lambda x: re.match('checkpoint', x), files):
+                print('Removing: {}'.format(os.path.join(root, file)))
+                os.remove(os.path.join(root, file))
+            for file in filter(lambda x: re.match('events', x), files):
+                print('Removing: {}'.format(os.path.join(root, file)))
+                os.remove(os.path.join(root, file))
+            for file in filter(lambda x: re.match('ckpt', x), files):
+                print('Removing: {}'.format(os.path.join(root, file)))
+                os.remove(os.path.join(root, file))
+            for file in filter(lambda x: re.match('siamese', x), files):
+                print('Removing: {}'.format(os.path.join(root, file)))
+                os.remove(os.path.join(root, file))
+
     ###############################################################################
     # Build model
     ###############################################################################
     traditional = True
     if traditional is True:
+
         strategy = tf.distribute.MirroredStrategy()
         with strategy.scope():
-            m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size)
-            model = m.build_model()
-            model.summary()
-            #print(args.lr)
-            #sys.exit(0)
-            optimizer = m.get_optimizer(args.optimizer, lr=args.lr)
-            model.compile(optimizer=optimizer,
-                          loss=tf.keras.losses.BinaryCrossentropy(),
-                          metrics=[tf.keras.metrics.BinaryCrossentropy(name='loss'),
-                                   tf.keras.metrics.BinaryAccuracy(name='accuracy')])
+            #m = GetModel(model_name=args.model_name, img_size=args.patch_size, embedding_size=args.embedding_size)
+            W_init = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.01)
+            W_init_fc = tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.2)
+            b_init = tf.keras.initializers.TruncatedNormal(mean=0.05, stddev=0.01)
+            input_shape = (args.patch_size, args.patch_size, 3)
+            model = Sequential()
+            model.add(Conv2D(64, (10, 10), activation='relu', input_shape=input_shape,
+                             kernel_initializer=W_init, kernel_regularizer=l2(2e-4)))
+            model.add(MaxPooling2D())
+            model.add(Conv2D(128, (7, 7), activation='relu',
+                             kernel_initializer=W_init,
+                             bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+            model.add(MaxPooling2D())
+            model.add(Conv2D(128, (4, 4), activation='relu', kernel_initializer=W_init,
+                             bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+            model.add(MaxPooling2D())
+            model.add(Conv2D(256, (4, 4), activation='relu', kernel_initializer=W_init,
+                             bias_initializer=b_init, kernel_regularizer=l2(2e-4)))
+            model.add(Flatten())
+            model.add(Dense(4096, activation="sigmoid", kernel_regularizer=l2(1e-3), kernel_initializer=W_init,
+                              bias_initializer=b_init))
+            anchor_input_tensor = Input(shape=input_shape, name='anchor_img')
+            other_input_tensor = Input(shape=input_shape, name='other_img')
+            anchor_encoded = model(anchor_input_tensor)
+            other_encoded = model(other_input_tensor)
+            # Get L1 Distances
+            L1_layer = Lambda(lambda tensors: abs(tensors[0] - tensors[1]))
+            x = L1_layer([anchor_encoded, other_encoded])
+            prediction = Dense(2, activation='sigmoid', bias_initializer=b_init)(x)
+            # prediction = Lambda(lambda x: tf.squeeze(x))(prediction)
+            siamese_net = Model(inputs=[anchor_input_tensor, other_input_tensor], outputs=prediction)
+            #optimizer = Adam(0.00006)
+            #siamese_net.compile(loss="binary_crossentropy", optimizer=optimizer)
+
+            siamese_net.summary()
+            optimizer = tf.keras.optimizers.Adam(learning_rate=0.0006)
+            siamese_net.compile(optimizer=optimizer,
+                          loss='binary_crossentropy',
+                          metrics=[tf.keras.metrics.BinaryCrossentropy(name='bce'),
+                                   tf.keras.metrics.AUC(name='AUC'),
+                                   tf.keras.metrics.AUC(curve='PR', name='PR'),
+                                   tf.keras.metrics.BinaryAccuracy(name='BinaryAccuracy')])
             ## tf.keras.metrics.AUC(curve='PR', num_thresholds=10, name='PR'),# metrics=['binary_accuracy', 'mse', tf.keras.metrics.AUC()]
             # tf.keras.metrics.Accuracy(name='accuracy'),
             # tf.keras.metrics.CategoricalAccuracy(name='CategoricalAccuracy'),
-            logger.debug('Model compiled')
             latest = tf.train.latest_checkpoint(checkpoint_dir)
             if not latest:
-                model.save_weights(checkpoint_path.format(epoch=0))
+                siamese_net.save_weights(checkpoint_path.format(epoch=0))
                 latest = tf.train.latest_checkpoint(checkpoint_dir)
-            ini_epoch=int(re.findall(r'\b\d+\b', os.path.basename(latest))[0])
+            ini_epoch = int(re.findall(r'\b\d+\b', os.path.basename(latest))[0])
             logger.debug('Loading initialized model')
-            model.load_weights(latest)
+            siamese_net.load_weights(latest)
             logger.debug('Loading weights from ' + latest)
-
 
         logger.debug('Completed loading initialized model')
 
-        #if args.image_dir_validation is None:
-            #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb)
-        #else:
-            #model.fit(train_ds, epochs=args.num_epochs, callbacks=cb, validation_data=validation_ds,steps_per_epoch=training_steps,)
-        model.fit(train_ds,epochs=args.num_epochs,callbacks=cb.get_callbacks(),validation_data=validation_ds,steps_per_epoch=training_steps,validation_steps=validation_steps,workers=1,class_weight=None,max_queue_size=1000,use_multiprocessing=False,shuffle=False,initial_epoch=ini_epoch)
-        #steps_per_epoch=training_steps,
-        #epochs=args.num_epochs,
-        #callbacks=cb.get_callbacks(),
-        #validation_data=validation_ds,
-        #validation_steps=validation_steps)
+        siamese_net.fit(train_ds,epochs=args.num_epochs,callbacks=cb.get_callbacks(),validation_data=validation_ds,steps_per_epoch=training_steps,validation_steps=validation_steps)
+        siamese_net.save(os.path.join(out_dir, 'my_model.h5'))
 
-        #outfile_dir = os.path.join(out_dir, 'siamesenet')
-        # model.reset_metrics()
-        # model.save(outfile_dir, save_format='tf')
-        # os.makedirs(outfile_dir)
-        model.save(os.path.join(out_dir, 'my_model.h5'))
-        # model.save(outfile_dir, 'my_model.h5')
-        # print('Completed and saved {outfile_dir}')
     else:
         #strategy = tf.distribute.MirroredStrategy()
         #with strategy.scope():
