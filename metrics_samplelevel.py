@@ -67,9 +67,9 @@ for line in fobj:
     line_list = os.path.basename(line[0]).split('.')
 
     model_name = "one-shot"
-    val="1"
+    val="0"
     if float(line[3])<0.5:
-        val="0"
+        val="1"
     if line_list[0]+'__'+line[1]+'__'+line[2] in dict_samp:    
         dict_samp[line_list[0]+'__'+line[1]+'__'+line[2]]=dict_samp[line_list[0]+'__'+line[1]+'__'+line[2]]+'__'+val
     else:

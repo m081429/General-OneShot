@@ -19,12 +19,13 @@ class CallBacks:
                                               write_images=False)
 
     def _getCP(self):
-        return tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(self.log_dir, 'cp-{epoch:04d}.ckpt'), verbose=1,  save_weights_only=True,save_frequency=1,save_best_only=True,monitor='val_accuracy')
+        #,save_frequency=1,save_best_only=True,monitor='val_accuracy'
+        return tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(self.log_dir, 'cp-{epoch:04d}.ckpt'), verbose=1,  save_weights_only=True)
 
     # Uncomment this when fixed in TF                 load_weights_on_restart=True)
 
     def _getES(self):
-        return tf.keras.callbacks.EarlyStopping(monitor='val_loss', verbose=1,patience=2,mode='min',restore_best_weights=True)
+        return tf.keras.callbacks.EarlyStopping(monitor='val_loss', verbose=1,patience=5,mode='min',restore_best_weights=True)
 
     def get_callbacks(self):
         return [self._getTB(), self._getCP(), self._getES()]

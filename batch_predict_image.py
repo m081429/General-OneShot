@@ -11,10 +11,9 @@ from tensorflow.keras import models
 import numpy as np
 import PIL.Image as Image
 import glob
-from preprocess import Preprocess, format_example, format_example_tf, update_status
+from preprocess import Preprocess, format_example, update_status
 import random
-from preprocess import Preprocess, format_example, format_example_tf, update_status
-
+import datetime
 
 input_file_path=sys.argv[1]
 input_file_path=input_file_path.strip()
@@ -101,34 +100,33 @@ for i in range(len(train_files_list)):
             list_lbls.append(1)
         category.append("train")  
         
-'''validation data pairs'''
-
-for i in range(len(val_files_list)):
-    for j in range(len(files_list)):
-        list_img_index1.append(val_files_list[i])
-        list_img_index2.append(files_list[j])
-        list_label_index.append([val_labels_list[i],labels_list[j]])
-        if val_labels_list[i] == labels_list[j]:
-            list_lbls.append(0)
-        else:
-            list_lbls.append(1)
-        category.append("val")   
+# '''validation data pairs'''
+# for i in range(len(val_files_list)):
+    # for j in range(len(files_list)):
+        # list_img_index1.append(val_files_list[i])
+        # list_img_index2.append(files_list[j])
+        # list_label_index.append([val_labels_list[i],labels_list[j]])
+        # if val_labels_list[i] == labels_list[j]:
+            # list_lbls.append(0)
+        # else:
+            # list_lbls.append(1)
+        # category.append("val")   
             
-'''testing data pairs'''
-
-for i in range(len(test_files_list)):
-    for j in range(len(files_list)):
-        list_img_index1.append(test_files_list[i])
-        list_img_index2.append(files_list[j])
-        list_label_index.append([test_labels_list[i],labels_list[j]])
-        if test_labels_list[i] == labels_list[j]:
-            list_lbls.append(0)
-        else:
-            list_lbls.append(1)
-        category.append("test") 
+# '''testing data pairs'''
+# for i in range(len(test_files_list)):
+    # for j in range(len(files_list)):
+        # list_img_index1.append(test_files_list[i])
+        # list_img_index2.append(files_list[j])
+        # list_label_index.append([test_labels_list[i],labels_list[j]])
+        # if test_labels_list[i] == labels_list[j]:
+            # list_lbls.append(0)
+        # else:
+            # list_lbls.append(1)
+        # category.append("test") 
        
 labels = tf.one_hot(list_lbls, 2)
 update_status(False)
+num_im=int(len(category)/64)
 t_category = tf.data.Dataset.from_tensor_slices(category)
 t_path_ds1 = tf.data.Dataset.from_tensor_slices(list_img_index1)
 t_image_ds1 = t_path_ds1.map(format_example, num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -141,15 +139,19 @@ t_image_label_ds = tf.data.Dataset.zip((t_image_ds1,t_image_ds2,t_label_ds,t_lab
 train_ds = t_image_label_ds.batch(64).prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 final_arr=[]
 final_dict={}
-for step, (image1,image2,label,label_ori,file1,file2,cate) in enumerate(train_ds):
-    if step>-1:
-        #print(step,image.shape,label.shape,file.shape)
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    for step, (image1,image2,label,label_ori,file1,file2,cate) in enumerate(train_ds):
+        #if step>5:
+        #    break
+        if step%100==0:
+            print(step,'/',num_im,datetime.datetime.now())
         lst_cate = list(cate.numpy())
         lst_label = list(label.numpy())
         lst_label_ori = list(label_ori.numpy())
         lst_file1 = list(file1.numpy())
         lst_file2 = list(file2.numpy())
-        result = np.asarray(new_model.predict([image1,image2]))
+        result = np.asarray(new_model.predict_on_batch([image1,image2]))
         lst_result = list(result)
         for i in range(0,len(lst_label)):
             #print(step, lst_file1[i],lst_file2[i],lst_label[i],lst_label_ori[i],lst_result[i][0],lst_result[i][1])

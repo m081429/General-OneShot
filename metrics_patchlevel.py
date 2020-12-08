@@ -72,9 +72,9 @@ for line in fobj:
     #else:
     #    line[3] = '1'
     model_name = 'one-shot'
-    val=1
+    val=0
     if float(line[4])>0.5:
-        val=0
+        val=1
     if line[2] == "train":
         train_ori.append(int(line[1]))
         train_pred.append(val)
